@@ -1,10 +1,10 @@
 import os
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv  # NEW
+from dotenv import load_dotenv
 
-# Load environment variables from .env
-load_dotenv()
+# Force load .env file explicitly
+load_dotenv(dotenv_path=".env")
 
 intents = discord.Intents.default()
 intents.message_content = True  # needed for reading messages
