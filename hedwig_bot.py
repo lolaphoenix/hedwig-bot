@@ -1,4 +1,6 @@
 import os
+import random
+import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -8,9 +10,14 @@ load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # needed for nickname and role changes
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Config
+OWLRY_CHANNEL_ID = 1410875871249829898  # replace with your #owlry-testing channel ID
+ROOM_OF_REQUIREMENT_ID = 1413134135169646624  # replace with your #room-of-requirement channel ID
+ALOHOMORA_ROLE = "Alohomora"
 GRINGOTTS_CHANNEL_ID = 1413047433016901743  # #gringotts-bank
 
 # House emojis
@@ -20,6 +27,18 @@ house_emojis = {
     "ravenclaw": ":ravenclaw:",
     "hufflepuff": ":hufflepuff:"
 }
+
+
+# --- Utility ---
+def get_original_nick(member):
+    return active_spells.get(member.id, {}).get("original_nick", member.display_name)
+
+async def schedule_finite(member, spell):
+    """Schedule Hedwig to send !finite in owlry channel after 24h."""
+    await asyncio.sleep(86400)  # 24h in seconds
+    channel = bot.get_channel(OWLRY_CHANNEL_ID)
+    if channel:
+        await channel.send(f"!finite {member.mention}")
 
 # In-memory points store
 house_points = {
@@ -36,6 +55,8 @@ async def on_ready():
 @bot.command()
 async def hello(ctx):
     await ctx.send("Hello from Hedwig!")
+
+# Points System
 
 @bot.command()
 async def addpoints(ctx, house: str, points: int):
@@ -174,25 +195,71 @@ async def leaderboard(ctx):
 
 # Define available spells
 spells = {
-    "lumos": {
+    "alohomora": {
+        "cost": 50,
+        "description": "🔑 Grants access to the Room of Requirement.",
+        "type": "role",
+        "role_name": "Alohomora"
+    },
+    "aguamenti": {
         "cost": 20,
-        "description": "✨ Cast Lumos on someone — gives them the Lumos role.",
-        "type": "role",  # this one assigns a role
-        "role_name": "Lumos ✨"
+        "description": "💧 Surrounds target’s nickname with 🌊 for 24 hours.",
+        "type": "nickname",
+        "prefix": "🌊",
+        "suffix": "🌊"
     },
-    "orchideous": {
-        "cost": 10,
-        "description": "🌸 Summon a bouquet of flowers for someone.",
-        "type": "message",
-        "message": "🌸 A beautiful bouquet of flowers magically appears for {target}!"
+    "confundo": {
+        "cost": 25,
+        "description": "❓ Adds CONFUNDED before nickname for 24 hours.",
+        "type": "nickname",
+        "prefix": "❓CONFUNDED - ",
+        "suffix": ""
     },
-    "accio": {
-        "cost": 15,
-        "description": "🍬 Summon a Sugar Quill for someone.",
-        "type": "message",
-        "message": "🍬 A Sugar Quill flies through the air and lands in {target}'s hands!"
+    "diffindo": {
+        "cost": 30,
+        "description": "✂️ Cuts the last 5 letters off nickname for 24 hours.",
+        "type": "truncate",
+        "length": 5
+    },
+    "ebublio": {
+        "cost": 20,
+        "description": "🫧 Surrounds target’s nickname with bubbles for 24 hours.",
+        "type": "nickname",
+        "prefix": "🫧",
+        "suffix": "🫧"
+    },
+    "herbifors": {
+        "cost": 20,
+        "description": "🌸 Surrounds target’s nickname with flowers for 24 hours.",
+        "type": "nickname",
+        "prefix": "🌸",
+        "suffix": "🌸"
+    },
+    "locomotorwibbly": {
+        "cost": 20,
+        "description": "🍮 Surrounds target’s nickname with jelly wobble for 24 hours.",
+        "type": "nickname",
+        "prefix": "🍮",
+        "suffix": "🍮"
+    },
+    "serpensortia": {
+        "cost": 20,
+        "description": "🐍 Surrounds target’s nickname with snakes for 24 hours.",
+        "type": "nickname",
+        "prefix": "🐍",
+        "suffix": "🐍"
+    },
+    "tarantallegra": {
+        "cost": 20,
+        "description": "💃 Surrounds target’s nickname with dancing emojis for 24 hours.",
+        "type": "nickname",
+        "prefix": "💃",
+        "suffix": "💃"
     }
 }
+
+# Track active spell effects
+active_spells = {}  # {user_id: {"original_nick": str, "spell": str}}
 
 @bot.command()
 async def shop(ctx):
@@ -201,6 +268,14 @@ async def shop(ctx):
     for spell, data in spells.items():
         shop_text += f"**{spell.capitalize()}** - {data['cost']} galleons\n   {data['description']}\n"
     await ctx.send(shop_text)
+
+
+async def schedule_finite(member):
+    """Schedule Finite 24 hours after casting a spell."""
+    await asyncio.sleep(86400)  # 24 hours
+    channel = bot.get_channel(OWLRY_CHANNEL_ID)  # Hedwig announces expiry
+    if channel:
+        await channel.send(f"!finite {member.mention}")
 
 
 @bot.command()
@@ -219,20 +294,41 @@ async def cast(ctx, spell: str, member: discord.Member):
     # Deduct cost
     remove_galleons(ctx.author.id, cost)
 
-    # Role-based spell
-    if spells[spell]["type"] == "role":
-        role_name = spells[spell]["role_name"]
-        role = discord.utils.get(ctx.guild.roles, name=role_name)
+    # Save original nickname
+    active_spells[member.id] = {"original_nick": member.display_name, "spell": spell}
+
+    # Apply effect
+    data = spells[spell]
+    if data["type"] == "role":
+        role = discord.utils.get(ctx.guild.roles, name=data["role_name"])
         if not role:
-            await ctx.send(f"⚠️ The role `{role_name}` does not exist. Please ask an admin to create it.")
+            await ctx.send(f"⚠️ The role `{data['role_name']}` does not exist. Please ask an admin to create it.")
             return
         await member.add_roles(role)
-        await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+    elif data["type"] == "nickname":
+        new_name = f"{data['prefix']}{member.display_name}{data['suffix']}"
+        await member.edit(nick=new_name)
+    elif data["type"] == "truncate":
+        new_name = member.display_name[:-data["length"]] if len(member.display_name) > data["length"] else member.display_name
+        await member.edit(nick=new_name)
 
-    # Message-based spell
-    elif spells[spell]["type"] == "message":
-        msg = spells[spell]["message"].format(target=member.display_name)
-        await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}**!\n{msg}")
+    await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+    asyncio.create_task(schedule_finite(member))
+
+
+@bot.command()
+async def finite(ctx, member: discord.Member):
+    """Revert user back to original nickname and remove Alohomora role."""
+    if member.id in active_spells:
+        orig = active_spells[member.id]["original_nick"]
+        await member.edit(nick=orig)
+        del active_spells[member.id]
+        await ctx.send(f"✨ Finite! {member.display_name} has been restored.")
+
+    role = discord.utils.get(ctx.guild.roles, name="Alohomora")
+    if role and role in member.roles:
+        await member.remove_roles(role)
+        await ctx.send(f"🔒 The Room of Requirement is closed for {member.display_name}.")
 
 
 # Run bot
