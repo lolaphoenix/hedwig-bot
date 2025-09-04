@@ -170,6 +170,71 @@ async def leaderboard(ctx):
 
     await ctx.send(result)
 
+# --- Spell Shop System ---
+
+# Define available spells
+spells = {
+    "lumos": {
+        "cost": 20,
+        "description": "✨ Cast Lumos on someone — gives them the Lumos role.",
+        "type": "role",  # this one assigns a role
+        "role_name": "Lumos ✨"
+    },
+    "orchideous": {
+        "cost": 10,
+        "description": "🌸 Summon a bouquet of flowers for someone.",
+        "type": "message",
+        "message": "🌸 A beautiful bouquet of flowers magically appears for {target}!"
+    },
+    "accio": {
+        "cost": 15,
+        "description": "🍬 Summon a Sugar Quill for someone.",
+        "type": "message",
+        "message": "🍬 A Sugar Quill flies through the air and lands in {target}'s hands!"
+    }
+}
+
+@bot.command()
+async def shop(ctx):
+    """View available spells."""
+    shop_text = "🪄 **Welcome to the Spell Shop!** 🪄\n"
+    for spell, data in spells.items():
+        shop_text += f"**{spell.capitalize()}** - {data['cost']} galleons\n   {data['description']}\n"
+    await ctx.send(shop_text)
+
+
+@bot.command()
+async def cast(ctx, spell: str, member: discord.Member):
+    """Cast a spell on someone if you can afford it."""
+    spell = spell.lower()
+    if spell not in spells:
+        await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shop`.")
+        return
+
+    cost = spells[spell]["cost"]
+    if get_balance(ctx.author.id) < cost:
+        await ctx.send("💸 You don’t have enough galleons to cast that spell!")
+        return
+
+    # Deduct cost
+    remove_galleons(ctx.author.id, cost)
+
+    # Role-based spell
+    if spells[spell]["type"] == "role":
+        role_name = spells[spell]["role_name"]
+        role = discord.utils.get(ctx.guild.roles, name=role_name)
+        if not role:
+            await ctx.send(f"⚠️ The role `{role_name}` does not exist. Please ask an admin to create it.")
+            return
+        await member.add_roles(role)
+        await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+
+    # Message-based spell
+    elif spells[spell]["type"] == "message":
+        msg = spells[spell]["message"].format(target=member.display_name)
+        await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}**!\n{msg}")
+
+
 # Run bot
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
