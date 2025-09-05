@@ -4,6 +4,7 @@ import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -28,13 +29,12 @@ house_emojis = {
     "hufflepuff": ":hufflepuff:"
 }
 
-
 # --- Utility ---
 def get_original_nick(member):
     return active_spells.get(member.id, {}).get("original_nick", member.display_name)
 
-async def schedule_finite(member, spell):
-    """Schedule Hedwig to send !finite in owlry channel after 24h."""
+async def schedule_finite(member):
+    """Schedule Finite 24 hours after casting a spell."""
     await asyncio.sleep(86400)  # 24h in seconds
     channel = bot.get_channel(OWLRY_CHANNEL_ID)
     if channel:
@@ -56,7 +56,7 @@ async def on_ready():
 async def hello(ctx):
     await ctx.send("Hello from Hedwig!")
 
-# Points System
+# --- Points System ---
 
 @bot.command()
 async def addpoints(ctx, house: str, points: int):
@@ -102,7 +102,6 @@ def add_galleons(user_id, amount):
 def remove_galleons(user_id, amount):
     galleons[user_id] = max(0, get_balance(user_id) - amount)
 
-
 @bot.command()
 async def balance(ctx, member: discord.Member = None):
     """Check your galleon balance."""
@@ -110,7 +109,6 @@ async def balance(ctx, member: discord.Member = None):
         member = ctx.author
     bal = get_balance(member.id)
     await ctx.send(f"💰 {member.display_name} has **{bal}** galleons.")
-
 
 @bot.command()
 async def givegalleons(ctx, member: discord.Member, amount: int):
@@ -122,7 +120,6 @@ async def givegalleons(ctx, member: discord.Member, amount: int):
     await ctx.send(f"✨ {member.display_name} received {amount} galleons! "
                    f"They now have {get_balance(member.id)}.")
 
-
 @bot.command()
 async def resetgalleons(ctx):
     """Reset all galleon balances (mod only)."""
@@ -131,9 +128,6 @@ async def resetgalleons(ctx):
         return
     galleons.clear()
     await ctx.send("🔄 All galleon balances have been reset.")
-
-import random
-from datetime import datetime, timedelta
 
 # Track last daily collection
 last_daily = {}  # user_id : datetime
@@ -193,7 +187,6 @@ async def leaderboard(ctx):
 
 # --- Spell Shop System ---
 
-# Define available spells
 spells = {
     "alohomora": {
         "cost": 50,
@@ -269,71 +262,8 @@ async def shop(ctx):
         shop_text += f"**{spell.capitalize()}** - {data['cost']} galleons\n   {data['description']}\n"
     await ctx.send(shop_text)
 
-
-async def schedule_finite(member):
-    """Schedule Finite 24 hours after casting a spell."""
-    await asyncio.sleep(86400)  # 24 hours
-    channel = bot.get_channel(OWLRY_CHANNEL_ID)  # Hedwig announces expiry
-    if channel:
-        await channel.send(f"!finite {member.mention}")
-
-
-@bot.command()
-async def cast(ctx, spell: str, member: discord.Member):
-    """Cast a spell on someone if you can afford it."""
-    spell = spell.lower()
-    if spell not in spells:
-        await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shop`.")
-        return
-
-    cost = spells[spell]["cost"]
-    if get_balance(ctx.author.id) < cost:
-        await ctx.send("💸 You don’t have enough galleons to cast that spell!")
-        return
-
-    # Deduct cost
-    remove_galleons(ctx.author.id, cost)
-
-    # Save original nickname
-    active_spells[member.id] = {"original_nick": member.display_name, "spell": spell}
-
-    # Apply effect
-    data = spells[spell]
-    if data["type"] == "role":
-        role = discord.utils.get(ctx.guild.roles, name=data["role_name"])
-        if not role:
-            await ctx.send(f"⚠️ The role `{data['role_name']}` does not exist. Please ask an admin to create it.")
-            return
-        await member.add_roles(role)
-    elif data["type"] == "nickname":
-        new_name = f"{data['prefix']}{member.display_name}{data['suffix']}"
-        await member.edit(nick=new_name)
-    elif data["type"] == "truncate":
-        new_name = member.display_name[:-data["length"]] if len(member.display_name) > data["length"] else member.display_name
-        await member.edit(nick=new_name)
-
-    await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
-    asyncio.create_task(schedule_finite(member))
-
-
-@bot.command()
-async def finite(ctx, member: discord.Member):
-    """Revert user back to original nickname and remove Alohomora role."""
-    if member.id in active_spells:
-        orig = active_spells[member.id]["original_nick"]
-        await member.edit(nick=orig)
-        del active_spells[member.id]
-        await ctx.send(f"✨ Finite! {member.display_name} has been restored.")
-
-    role = discord.utils.get(ctx.guild.roles, name="Alohomora")
-    if role and role in member.roles:
-        await member.remove_roles(role)
-        await ctx.send(f"🔒 The Room of Requirement is closed for {member.display_name}.")
-
 # --- Room of Requirement Potion Game ---
-
-# Track active potion games: {user_id: {"winning": int, "chosen": bool}}
-active_potions = {}
+active_potions = {}  # {user_id: {"winning": int, "chosen": bool}}
 
 @bot.command()
 async def choose(ctx, number: int):
@@ -362,9 +292,9 @@ async def choose(ctx, number: int):
         await ctx.send(f"💨 {ctx.author.mention} chose potion {number}... but alas, nothing happens. "
                        f"Better luck next time!")
 
-# Modify cast() so Alohomora starts the game
 @bot.command()
 async def cast(ctx, spell: str, member: discord.Member):
+    """Cast a spell on someone if you can afford it."""
     spell = spell.lower()
     if spell not in spells:
         await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shop`.")
@@ -411,6 +341,20 @@ async def cast(ctx, spell: str, member: discord.Member):
     asyncio.create_task(schedule_finite(member))
 
 @bot.command()
+async def finite(ctx, member: discord.Member):
+    """Revert user back to original nickname and remove Alohomora role."""
+    if member.id in active_spells:
+        orig = active_spells[member.id]["original_nick"]
+        await member.edit(nick=orig)
+        del active_spells[member.id]
+        await ctx.send(f"✨ Finite! {member.display_name} has been restored.")
+
+    role = discord.utils.get(ctx.guild.roles, name="Alohomora")
+    if role and role in member.roles:
+        await member.remove_roles(role)
+        await ctx.send(f"🔒 The Room of Requirement is closed for {member.display_name}.")
+
+@bot.command()
 async def trigger_game(ctx):
     """Admin/testing command to trigger the potion game manually."""
     user_id = ctx.author.id
@@ -421,7 +365,6 @@ async def trigger_game(ctx):
         f"Choose wisely with `!choose 1–5`\n"
         f":potion1: :potion2: :potion3: :potion4: :potion5:"
     )
-
 
 # Run bot
 TOKEN = os.getenv("DISCORD_TOKEN")
