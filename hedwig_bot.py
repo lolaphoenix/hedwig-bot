@@ -330,6 +330,98 @@ async def finite(ctx, member: discord.Member):
         await member.remove_roles(role)
         await ctx.send(f"🔒 The Room of Requirement is closed for {member.display_name}.")
 
+# --- Room of Requirement Potion Game ---
+
+# Track active potion games: {user_id: {"winning": int, "chosen": bool}}
+active_potions = {}
+
+@bot.command()
+async def choose(ctx, number: int):
+    """Choose one of the 5 potions in the Room of Requirement."""
+    if number < 1 or number > 5:
+        await ctx.send("🚫 Please choose a number between 1 and 5.")
+        return
+
+    user_id = ctx.author.id
+    if user_id not in active_potions:
+        await ctx.send("❌ You don’t have an active potion challenge. Cast Alohomora first!")
+        return
+
+    if active_potions[user_id]["chosen"]:
+        await ctx.send("🧪 You’ve already chosen your potion!")
+        return
+
+    active_potions[user_id]["chosen"] = True
+    winning = active_potions[user_id]["winning"]
+
+    if number == winning:
+        add_galleons(user_id, 100)
+        await ctx.send(f"🎉 {ctx.author.mention} chose potion {number} and it was the lucky one! "
+                       f"You gain **100 galleons**! 💰")
+    else:
+        await ctx.send(f"💨 {ctx.author.mention} chose potion {number}... but alas, nothing happens. "
+                       f"Better luck next time!")
+
+# Modify cast() so Alohomora starts the game
+@bot.command()
+async def cast(ctx, spell: str, member: discord.Member):
+    spell = spell.lower()
+    if spell not in spells:
+        await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shop`.")
+        return
+
+    cost = spells[spell]["cost"]
+    if get_balance(ctx.author.id) < cost:
+        await ctx.send("💸 You don’t have enough galleons to cast that spell!")
+        return
+
+    # Deduct cost
+    remove_galleons(ctx.author.id, cost)
+
+    # Save original nickname
+    active_spells[member.id] = {"original_nick": member.display_name, "spell": spell}
+
+    data = spells[spell]
+    if data["type"] == "role":
+        role = discord.utils.get(ctx.guild.roles, name=data["role_name"])
+        if not role:
+            await ctx.send(f"⚠️ The role `{data['role_name']}` does not exist. Please ask an admin to create it.")
+            return
+        await member.add_roles(role)
+        await ctx.send(f"✨ {ctx.author.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+
+        if spell == "alohomora":
+            # Start potion game
+            active_potions[member.id] = {"winning": random.randint(1, 5), "chosen": False}
+            room = bot.get_channel(ROOM_OF_REQUIREMENT_ID)
+            if room:
+                await room.send(
+                    f"🔮 Welcome {member.mention} to the Room of Requirement!\n"
+                    f"Choose wisely… pick a potion with `!choose 1–5`\n"
+                    f":potion1: :potion2: :potion3: :potion4: :potion5:"
+                )
+
+    elif data["type"] == "nickname":
+        new_name = f"{data['prefix']}{member.display_name}{data['suffix']}"
+        await member.edit(nick=new_name)
+    elif data["type"] == "truncate":
+        new_name = member.display_name[:-data["length"]] if len(member.display_name) > data["length"] else member.display_name
+        await member.edit(nick=new_name)
+
+    asyncio.create_task(schedule_finite(member))
+
+@bot.command()
+async def trigger_game(ctx):
+    """Admin/testing command to trigger the potion game manually."""
+    user_id = ctx.author.id
+    active_potions[user_id] = {"winning": random.randint(1, 5), "chosen": False}
+
+    await ctx.send(
+        f"🧪 Testing potion game for {ctx.author.mention}!\n"
+        f"Choose wisely with `!choose 1–5`\n"
+        f":potion1: :potion2: :potion3: :potion4: :potion5:"
+    )
+
 
 # Run bot
 TOKEN = os.getenv("DISCORD_TOKEN")
