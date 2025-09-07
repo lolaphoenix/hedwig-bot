@@ -20,6 +20,7 @@ OWLRY_CHANNEL_ID = 1410875871249829898
 ROOM_OF_REQUIREMENT_ID = 1413134135169646624
 ALOHOMORA_ROLE = "Alohomora"
 GRINGOTTS_CHANNEL_ID = 1413047433016901743
+ALLOWED_ROLES = ["Prefects", "Head of House"]  # roles allowed to give galleons
 
 # Custom potion emojis
 POTION_EMOJIS = [
@@ -114,6 +115,25 @@ async def daily(ctx):
     if gringotts:
         await gringotts.send(f"💰 {ctx.author.display_name} collected daily allowance "
                              f"and now has {get_balance(user_id)} galleons!")
+
+@bot.command()
+async def givegalleons(ctx, member: discord.Member, amount: int):
+    """Give galleons to a user (restricted to Prefects & Head of House)."""
+    if not any(r.name in ALLOWED_ROLES for r in ctx.author.roles):
+        return await ctx.send("🚫 You don't have permission to give galleons.")
+
+    add_galleons(member.id, amount)
+    await ctx.send(f"✨ {member.display_name} received {amount} galleons! "
+                   f"They now have {get_balance(member.id)}.")
+
+@bot.command()
+async def resetgalleons(ctx):
+    """Reset all galleon balances (restricted)."""
+    if not any(r.name in ALLOWED_ROLES for r in ctx.author.roles):
+        return await ctx.send("🚫 You don't have permission to reset galleons.")
+
+    galleons.clear()
+    await ctx.send("🔄 All galleon balances have been reset!")
 
 # --- Spell Shop ---
 spells = {
