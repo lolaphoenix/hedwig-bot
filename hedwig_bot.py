@@ -254,6 +254,19 @@ async def choose(ctx, number: int):
     if room:
         await room.purge(limit=100)
 
+@bot.command()
+@commands.has_role("Prefects")  # only Prefects can trigger test
+async def trigger_game(ctx, member: discord.Member = None):
+    """Testing only: Start the Room of Requirement potion game manually."""
+    member = member or ctx.author
+    active_potions[member.id] = {"winning": random.randint(1, 5), "chosen": False}
+    room = bot.get_channel(ROOM_OF_REQUIREMENT_ID)
+    if room:
+        await room.send(
+            f"🔮 Welcome {member.mention} (test mode)!\nPick a potion with `!choose 1–5`\n" +
+            " ".join(POTION_EMOJIS)
+        )
+
 # Run bot
 TOKEN = os.getenv("DISCORD_TOKEN")
 bot.run(TOKEN)
