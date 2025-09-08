@@ -47,13 +47,14 @@ POTION_EMOJIS = [
     "<:potion5:1413860345055019201>",
 ]
 
-# House emojis for points display
+# House emojis
 house_emojis = {
-    "gryffindor": ":gryffindor:",
-    "slytherin": ":slytherin:",
-    "ravenclaw": ":ravenclaw:",
-    "hufflepuff": ":hufflepuff:"
+    "gryffindor": "<:gryffindor:1398846272114524300>",
+    "slytherin": "<:slytherin:1398846083463122984>",
+    "ravenclaw": "<:ravenclaw:1398846388430835752>",
+    "hufflepuff": "<:hufflepuff:1398846494844387379>",
 }
+
 
 # -------------------------
 # STATE (IN-MEMORY)
