@@ -555,12 +555,16 @@ async def leaderboard(ctx):
 # -------------------------
 @bot.command()
 async def shop(ctx):
+    # Spells
     msg = "🪄 **Spell Shop** 🪄\n"
-    for k, v in EFFECT_LIBRARY.items():
-        msg += f"**{k.capitalize()}** — {v.get('cost', '?')} galleons: {v.get('kind')} — {v.get('description','')}\n"
+    for name, data in spells.items():
+        msg += f"**{name.capitalize()}** — {data['cost']} galleons\n   {data['description']}\n"
+
+    # Potions
     msg += "\n🍷 **Potion Shop** 🍷\n"
-    for k, v in POTION_LIBRARY.items():
-        msg += f"**{k.capitalize()}** — {v.get('cost', '?')} galleons: {v.get('description','')}\n"
+    for name, data in potions.items():
+        msg += f"**{name.capitalize()}** — {data['cost']} galleons\n   {data['description']}\n"
+
     await ctx.send(msg)
 
 # -------------------------
