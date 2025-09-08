@@ -501,9 +501,11 @@ async def hedwigmod(ctx):
     msg = (
         "⚖️ **Hedwig Moderator Commands** ⚖️\n"
         "`!addpoints <house> <points>` — Add house points\n"
-        "`!resetpoints` — Reset house points\n"
+        "`!resetpoints` — Reset house points globally\n"
         "`!givegalleons @user <amount>` — Give galleons to a user (Prefects & Head of House only)\n"
-        "`!resetgalleons` — Clear all galleon balances\n"
+        "`!resetgalleons` — Clear all galleon balances globally\n"
+	"`!finite @user`  — Removes most recent spell/potion"
+	"`!finite @user name`  — Removes the most recent spell/potion with that name"
     )
     await ctx.send(msg)
 
