@@ -138,29 +138,79 @@ def make_effect_uid() -> str:
 # Each effect is represented when applied by a dict put into active_effects[user]['effects'].
 # "kind" determines how we apply/undo it.
 EFFECT_LIBRARY = {
-    # spells
-    "aguamenti": {"cost": 20, "kind": "nickname", "prefix": "🌊", "suffix": "🌊", "duration": 86400},
-    "confundo": {"cost": 25, "kind": "nickname", "prefix": "❓CONFUNDED - ", "suffix": "", "duration": 86400},
-    "diffindo": {"cost": 30, "kind": "truncate", "length": 5, "duration": 86400},
-    "ebublio": {"cost": 20, "kind": "nickname", "prefix": "🫧", "suffix": "🫧", "duration": 86400},
-    "herbifors": {"cost": 20, "kind": "nickname", "prefix": "🌸", "suffix": "🌸", "duration": 86400},
-    "locomotorwibbly": {"cost": 20, "kind": "nickname", "prefix": "🍮", "suffix": "🍮", "duration": 86400},
-    "serpensortia": {"cost": 20, "kind": "nickname", "prefix": "🐍", "suffix": "🐍", "duration": 86400},
-    "tarantallegra": {"cost": 20, "kind": "nickname", "prefix": "💃", "suffix": "💃", "duration": 86400},
-    "incendio": {"cost": 25, "kind": "nickname", "prefix": "🔥", "suffix": "🔥", "duration": 86400},
-    "silencio": {"cost": 40, "kind": "silence", "duration": 86400, "weekly_limit_days": 7},
-    "alohomora": {"cost": 50, "kind": "role_alohomora", "duration": 86400},
-    "lumos": {"cost": 15, "kind": "role_lumos", "prefix": "⭐", "duration": 86400},
-    # (you can add more)
+    "aguamenti": {
+        "cost": 20, "kind": "nickname", "prefix": "🌊", "suffix": "🌊", "duration": 86400,
+        "description": "💧 Surrounds the target's nickname with 🌊 for 24 hours."
+    },
+    "confundo": {
+        "cost": 25, "kind": "nickname", "prefix": "❓CONFUNDED - ", "suffix": "", "duration": 86400,
+        "description": "❓ Prefixes CONFUNDED to the target's nickname for 24 hours."
+    },
+    "diffindo": {
+        "cost": 30, "kind": "truncate", "length": 5, "duration": 86400,
+        "description": "✂️ Removes the last 5 characters of the target's nickname for 24 hours."
+    },
+    "ebublio": {
+        "cost": 20, "kind": "nickname", "prefix": "🫧", "suffix": "🫧", "duration": 86400,
+        "description": "🫧 Surrounds the target's nickname with bubbles for 24 hours."
+    },
+    "herbifors": {
+        "cost": 20, "kind": "nickname", "prefix": "🌸", "suffix": "🌸", "duration": 86400,
+        "description": "🌸 Gives the target a floral nickname for 24 hours."
+    },
+    "locomotorwibbly": {
+        "cost": 20, "kind": "nickname", "prefix": "🍮", "suffix": "🍮", "duration": 86400,
+        "description": "🍮 Makes the target's nickname wobble (jelly emoji) for 24 hours."
+    },
+    "serpensortia": {
+        "cost": 20, "kind": "nickname", "prefix": "🐍", "suffix": "🐍", "duration": 86400,
+        "description": "🐍 Surrounds the target's nickname with snake emojis for 24 hours."
+    },
+    "tarantallegra": {
+        "cost": 20, "kind": "nickname", "prefix": "💃", "suffix": "💃", "duration": 86400,
+        "description": "💃 Adds dancing emojis around the target's nickname for 24 hours."
+    },
+    "incendio": {
+        "cost": 25, "kind": "nickname", "prefix": "🔥", "suffix": "🔥", "duration": 86400,
+        "description": "🔥 Adds flames to the target's nickname for 24 hours."
+    },
+    "silencio": {
+        "cost": 40, "kind": "silence", "duration": 86400, "weekly_limit_days": 7,
+        "description": "🤫 Silences the target from casting spells for 24 hours (one use per week)."
+    },
+    "alohomora": {
+        "cost": 50, "kind": "role_alohomora", "duration": 86400,
+        "description": "🔑 Grants access to the Room of Requirement for 24 hours and starts the potion game."
+    },
+    "lumos": {
+        "cost": 15, "kind": "role_lumos", "prefix": "⭐", "duration": 86400,
+        "description": "⭐ Gives the Lumos role and a star prefix to the nickname for 24 hours."
+    },
 }
 
 POTION_LIBRARY = {
-    "felixfelicis": {"cost": 60, "kind": "potion_luck_good", "prefix": "🍀", "duration": 86400},
-    "draughtlivingdeath": {"cost": 50, "kind": "potion_luck_bad", "prefix": "💀", "duration": 86400},
-    "amortentia": {"cost": 70, "kind": "potion_amortentia", "prefix": "💖", "role_id": ROLE_IDS["amortentia"], "duration": 86400},
-    "polyjuice": {"cost": 80, "kind": "potion_polyjuice", "duration": 86400},
-    "bezoar": {"cost": 30, "kind": "potion_bezoar", "duration": 0},
+    "felixfelicis": {
+        "cost": 60, "kind": "potion_luck_good", "prefix": "🍀", "duration": 86400,
+        "description": "🍀 Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
+    },
+    "draughtlivingdeath": {
+        "cost": 50, "kind": "potion_luck_bad", "prefix": "💀", "duration": 86400,
+        "description": "💀 Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
+    },
+    "amortentia": {
+        "cost": 70, "kind": "potion_amortentia", "prefix": "💖", "role_id": ROLE_IDS["amortentia"], "duration": 86400,
+        "description": "💖 Amortentia: grants the Amortentia role (color effect) and adds 💖 to nickname for 24 hours."
+    },
+    "polyjuice": {
+        "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
+        "description": "🧪 Polyjuice Potion: temporarily grants a common-room role of a random house for 24 hours."
+    },
+    "bezoar": {
+        "cost": 30, "kind": "potion_bezoar", "duration": 0,
+        "description": "🪨 Bezoar: removes active potion effects from the target instantly."
+    },
 }
+
 
 # -------------------------
 # APPLY / REMOVE EFFECTS
@@ -556,15 +606,20 @@ async def leaderboard(ctx):
 @bot.command()
 async def shop(ctx):
     # Spells
-    msg = "🪄 **Spell Shop** 🪄\n"
-    for name, data in spells.items():
-        msg += f"**{name.capitalize()}** — {data['cost']} galleons\n   {data['description']}\n"
+    msg = "🪄 **Spell Shop** 🪄\n\n"
+    for name, data in EFFECT_LIBRARY.items():
+        cost = data.get("cost", "?")
+        desc = data.get("description", "No description available.")
+        msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
 
     # Potions
-    msg += "\n🍷 **Potion Shop** 🍷\n"
-    for name, data in potions.items():
-        msg += f"**{name.capitalize()}** — {data['cost']} galleons\n   {data['description']}\n"
+    msg += "🍷 **Potion Shop** 🍷\n\n"
+    for name, data in POTION_LIBRARY.items():
+        cost = data.get("cost", "?")
+        desc = data.get("description", "No description available.")
+        msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
 
+    msg += "Use `!cast <spell> @user` to cast spells and `!drink <potion> [@user]` to purchase/drink potions.\n"
     await ctx.send(msg)
 
 # -------------------------
