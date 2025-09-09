@@ -811,8 +811,13 @@ async def on_ready():
 # -------------------------
 # Run the bot
 # -------------------------
+# --- Run Bot ---
+@bot.event
+async def on_ready():
+    print(f"🦉 Hedwig is online as {bot.user}!")
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN not set in environment (.env)")
+    raise ValueError("❌ DISCORD_TOKEN is missing from your .env file!")
 
 bot.run(TOKEN)
