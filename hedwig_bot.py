@@ -57,25 +57,29 @@ house_emojis = {
 }
 
 # -------------------------
-# PERSISTENCE: galleons (JSON)
+# PERSISTENCE: data files
 # -------------------------
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
+POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 
+# in-memory state (will be loaded on start)
+galleons = {}
+house_points = {h: 0 for h in house_emojis}
+
+# --- galleons persistence ---
 def load_galleons():
-    """Load galleons from disk into the `galleons` dict. Creates file if missing."""
     global galleons
     try:
         if os.path.exists(GALLEONS_FILE):
             with open(GALLEONS_FILE, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-            # JSON keys are strings — convert to ints
+            # convert keys back to int
             galleons = {int(k): int(v) for k, v in raw.items()}
             print(f"[Hedwig] loaded {len(galleons)} galleon accounts from {GALLEONS_FILE}")
         else:
             galleons = {}
-            # create empty file
             save_galleons()
             print(f"[Hedwig] created new galleons file at {GALLEONS_FILE}")
     except Exception as e:
@@ -83,10 +87,8 @@ def load_galleons():
         galleons = {}
 
 def save_galleons():
-    """Save `galleons` to disk atomically."""
     try:
         tmp = GALLEONS_FILE + ".tmp"
-        # convert keys to strings for JSON
         serializable = {str(k): v for k, v in galleons.items()}
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2)
@@ -94,57 +96,64 @@ def save_galleons():
     except Exception as e:
         print("[Hedwig] Failed to save galleons:", e)
 
-# Replace your add/remove helpers to persist immediately
-def add_galleons_local(user_id: int, amount: int):
-    galleons[user_id] = get_balance(user_id) + int(amount)
-    save_galleons()
+# --- house points persistence ---
+def load_house_points():
+    global house_points
+    try:
+        if os.path.exists(POINTS_FILE):
+            with open(POINTS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # ensure we only keep known houses and integers
+            for h in house_points:
+                if h in raw:
+                    house_points[h] = int(raw[h])
+            print(f"[Hedwig] loaded house points from {POINTS_FILE}")
+        else:
+            save_house_points()
+            print(f"[Hedwig] created new house points file at {POINTS_FILE}")
+    except Exception as e:
+        print("[Hedwig] Failed to load house points:", e)
 
-def remove_galleons_local(user_id: int, amount: int):
-    galleons[user_id] = max(0, get_balance(user_id) - int(amount))
-    save_galleons()
-
+def save_house_points():
+    try:
+        tmp = POINTS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(house_points, f, indent=2)
+        os.replace(tmp, POINTS_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save house points:", e)
 
 # -------------------------
-# STATE (IN-MEMORY)
+# STATE (OTHER IN-MEMORY)
 # -------------------------
-# NOTE: All state is in-memory. Restarting the bot clears balances, active effects, cooldowns.
-house_points = {h: 0 for h in house_emojis}             # house -> points
-galleons = {}                                           # user_id -> int
-last_daily = {}                                         # user_id -> datetime
+last_daily = {}  # user_id -> datetime
+active_effects = {}  # user_id -> {original_nick, effects: [...]}
+active_potions = {}  # user_id -> {winning, chosen, started_by}
 
-# Active effects (spells & potions) per user:
-# user_id -> { "original_nick": str, "effects": [ {uid, name, kind, expires_at, meta...}, ... ] }
-active_effects = {}
-
-# Potions currently open (Room game): user_id -> {"winning": int, "chosen": bool, "started_by": id}
-active_potions = {}
-
-# Cooldowns / restrictions
-alohomora_cooldowns = {}    # target_user_id -> datetime of last Alohomora
-silencio_last = {}          # target_user_id -> datetime of last Silencio (weekly limit)
-silenced_until = {}         # user_id -> datetime until which they are silenced
-
-# Active potion-specific data (if you prefer separate tracking)
-active_potion_effects = {}
+alohomora_cooldowns = {}    # target_user_id -> datetime
+silencio_last = {}          # target_user_id -> datetime
+silenced_until = {}         # user_id -> datetime
 
 # -------------------------
 # HELPERS
 # -------------------------
+
 def now_utc():
     return datetime.utcnow()
 
+
 def is_staff_allowed(member: discord.Member) -> bool:
-    """Return True if member has either Prefects or Head of House role."""
     allowed_ids = {ROLE_IDS["prefects"], ROLE_IDS["head_of_house"]}
     return any(r.id in allowed_ids for r in member.roles)
 
+
 def get_member_from_id(user_id: int):
-    """Search all guilds for the member (works if bot is only in one guild or has access)."""
     for guild in bot.guilds:
         m = guild.get_member(user_id)
         if m:
             return m
     return None
+
 
 async def safe_add_role(member: discord.Member, role: discord.Role):
     try:
@@ -154,6 +163,7 @@ async def safe_add_role(member: discord.Member, role: discord.Role):
     except Exception as e:
         print("Error adding role:", e)
 
+
 async def safe_remove_role(member: discord.Member, role: discord.Role):
     try:
         await member.remove_roles(role)
@@ -161,6 +171,7 @@ async def safe_remove_role(member: discord.Member, role: discord.Role):
         print(f"Missing permissions to remove role {role} from {member}.")
     except Exception as e:
         print("Error removing role:", e)
+
 
 async def set_nickname(member: discord.Member, nickname: str):
     try:
@@ -170,14 +181,28 @@ async def set_nickname(member: discord.Member, nickname: str):
     except Exception as e:
         print("Error setting nickname:", e)
 
+
 def get_balance(user_id: int) -> int:
-    return galleons.get(user_id, 0)
+    return galleons.get(int(user_id), 0)
+
+
+def add_galleons_local(user_id: int, amount: int):
+    user_id = int(user_id)
+    galleons[user_id] = get_balance(user_id) + int(amount)
+    save_galleons()
+
+
+def remove_galleons_local(user_id: int, amount: int):
+    user_id = int(user_id)
+    galleons[user_id] = max(0, get_balance(user_id) - int(amount))
+    save_galleons()
+
 
 def make_effect_uid() -> str:
     return uuid.uuid4().hex
 
+
 def get_user_house(member: discord.Member):
-    """Return house key if user has a house role, else None."""
     for name in ("gryffindor", "slytherin", "ravenclaw", "hufflepuff"):
         rid = ROLE_IDS.get(name)
         if rid and any(r.id == rid for r in member.roles):
@@ -198,7 +223,7 @@ EFFECT_LIBRARY = {
     },
     "diffindo": {
         "cost": 30, "kind": "truncate", "length": 5, "duration": 86400,
-        "description": "✂️ Removes the last 5 characters of the target's nickname for 24 hours."
+        "description": ✂️ Removes the last 5 characters of the target's nickname for 24 hours."
     },
     "ebublio": {
         "cost": 20, "kind": "nickname", "prefix": "🫧", "suffix": "🫧", "duration": 86400,
@@ -263,7 +288,6 @@ POTION_LIBRARY = {
         "cost": 30, "kind": "potion_bezoar", "duration": 0,
         "description": "🪨 Bezoar: removes active potion effects from the target instantly."
     },
-    # helper "polyfail" implemented as a potion-like effect to add cat prefix if polyjuice backfires
     "polyfail_cat": {
         "cost": 0, "kind": "nickname", "prefix": "🐱", "suffix": "", "duration": 86400,
         "description": "🐱 (polyjuice backfire) Adds a cat emoji to the front of the nickname for 24 hours."
@@ -274,15 +298,9 @@ POTION_LIBRARY = {
 # APPLY / REMOVE EFFECTS
 # -------------------------
 async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
-    """
-    Apply an effect to member, register it in active_effects and schedule expiration.
-    `source` is "spell" or "potion".
-    `meta` is optional metadata dict (used for polyjuice to store chosen house).
-    """
     uid = make_effect_uid()
     now = now_utc()
 
-    # Determine effect definition (spell or potion)
     if effect_name in EFFECT_LIBRARY:
         ed = EFFECT_LIBRARY[effect_name].copy()
     elif effect_name in POTION_LIBRARY:
@@ -307,11 +325,9 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "source": source,
     }
 
-    # include meta if provided
     if meta:
         entry.update(meta)
 
-    # Store original nick if first effect for this user
     if member.id not in active_effects:
         active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
@@ -319,9 +335,7 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
 
     kind = entry["kind"]
 
-    # immediate actions based on kind
     if kind == "role_alohomora":
-        # find role by name in the guild where member is
         guild_role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
         if guild_role:
             await safe_add_role(member, guild_role)
@@ -337,7 +351,6 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
             await safe_add_role(member, role)
 
     elif kind == "potion_polyjuice":
-        # meta should include 'polyhouse'
         polyhouse = entry.get("polyhouse")
         if polyhouse:
             role_id = ROLE_IDS.get(polyhouse)
@@ -348,17 +361,14 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     elif kind == "silence":
         silenced_until[member.id] = entry["expires_at"]
 
-    # recompute nickname for nickname-style and other effects
     await recompute_nickname(member)
 
-    # schedule expiry if needed
     if entry["expires_at"]:
         asyncio.create_task(schedule_expiry(member.id, uid, entry["expires_at"]))
 
     return uid
 
 async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
-    """Wait until expires_at and then remove effect uid for user_id."""
     delta = (expires_at - now_utc()).total_seconds()
     if delta > 0:
         await asyncio.sleep(delta)
@@ -366,7 +376,6 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     if member:
         await expire_effect(member, uid)
     else:
-        # clean up state if member not found
         if user_id in active_effects:
             effects = active_effects[user_id]["effects"]
             newlist = [e for e in effects if e["uid"] != uid]
@@ -375,7 +384,6 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
                 del active_effects[user_id]
 
 async def expire_effect(member: discord.Member, uid: str):
-    """Remove an effect by uid from a member and update roles/nicknames."""
     data = active_effects.get(member.id)
     if not data:
         return
@@ -417,7 +425,6 @@ async def expire_effect(member: discord.Member, uid: str):
     elif kind == "silence":
         silenced_until.pop(member.id, None)
 
-    # recompute nickname or restore original
     if effects:
         await recompute_nickname(member)
     else:
@@ -431,7 +438,6 @@ async def expire_effect(member: discord.Member, uid: str):
         del active_effects[member.id]
 
 async def recompute_nickname(member: discord.Member):
-    """Build nickname from original + effects in order of application."""
     data = active_effects.get(member.id)
     if not data:
         return
@@ -464,21 +470,16 @@ def pick_winning_potion():
     return random.randint(1, 5)
 
 async def announce_room_for(member: discord.Member):
-    """Send welcome and big potion emojis in separate messages so emojis appear jumbo."""
     room = bot.get_channel(ROOM_OF_REQUIREMENT_ID)
     if not room:
         return
     await room.send(f"🔮 Welcome {member.mention}!\nPick a potion with `!choose 1-5`")
-    # send emojis on their own line (renders larger)
     await room.send(" ".join(POTION_EMOJIS))
 
-# After a player chooses, we remove Alohomora role and schedule purge after 30 min
 async def finalize_room_after_choice(member: discord.Member):
-    # remove Alohomora role immediately
     role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
     if role and role in member.roles:
         await safe_remove_role(member, role)
-    # schedule purge after 30 minutes
     asyncio.create_task(purge_room_after_delay(1800))
 
 async def purge_room_after_delay(delay_seconds: int):
@@ -532,7 +533,8 @@ async def hedwigmod(ctx):
 async def addpoints(ctx, house: str, points: int):
     house = house.lower()
     if house in house_points:
-        house_points[house] += points
+        house_points[house] += int(points)
+        save_house_points()
         await ctx.send(f"{house_emojis[house]} {house.capitalize()} now has {house_points[house]} points!")
     else:
         await ctx.send("That house does not exist.")
@@ -550,6 +552,7 @@ async def resetpoints(ctx):
         return await ctx.send("❌ You don’t have permission to reset points.")
     for house in house_points:
         house_points[house] = 0
+    save_house_points()
     await ctx.send("🔄 All house points have been reset!")
 
 # -------------------------
@@ -591,7 +594,6 @@ async def pay(ctx, member: discord.Member, amount: int):
 
 @bot.command()
 async def givegalleons(ctx, member: discord.Member, amount: int):
-    """Prefects and Head of House only"""
     if not is_staff_allowed(ctx.author):
         return await ctx.send("🚫 You don't have permission to give galleons.")
     if amount <= 0:
@@ -604,6 +606,7 @@ async def resetgalleons(ctx):
     if not is_staff_allowed(ctx.author):
         return await ctx.send("🚫 You don't have permission to reset galleons.")
     galleons.clear()
+    save_galleons()
     await ctx.send("🔄 All galleon balances have been reset.")
 
 @bot.command()
@@ -613,7 +616,7 @@ async def leaderboard(ctx):
     sorted_balances = sorted(galleons.items(), key=lambda x: x[1], reverse=True)[:10]
     result = "🏦 Gringotts Rich List 🏦\n"
     for i, (user_id, bal) in enumerate(sorted_balances, start=1):
-        member = get_member_from_id(user_id) or ctx.guild.get_member(user_id)
+        member = get_member_from_id(int(user_id)) or ctx.guild.get_member(int(user_id))
         name = member.display_name if member else f"User {user_id}"
         result += f"{i}. {name} — {bal} galleons\n"
     await ctx.send(result)
@@ -631,11 +634,10 @@ async def shop(ctx):
 
     msg += "🍷 **Potion Shop** 🍷\n\n"
     for name, data in POTION_LIBRARY.items():
-        cost = data.get("cost", "?")
-        desc = data.get("description", "No description available.")
-        # don't show polyfail helper in the shop
         if name == "polyfail_cat":
             continue
+        cost = data.get("cost", "?")
+        desc = data.get("description", "No description available.")
         msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
 
     msg += "Use `!cast <spell> @user` to cast spells and `!drink <potion> [@user]` to purchase/drink potions.\n"
@@ -649,11 +651,9 @@ async def cast(ctx, spell: str, member: discord.Member):
     caster = ctx.author
     spell = spell.lower()
 
-    # check silence on caster
     if caster.id in silenced_until and now_utc() < silenced_until[caster.id]:
         return await ctx.send("🤫 You are silenced and cannot cast spells right now.")
 
-    # validate
     if spell not in EFFECT_LIBRARY:
         return await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shop`.")
 
@@ -662,7 +662,6 @@ async def cast(ctx, spell: str, member: discord.Member):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to cast that spell!")
 
-    # Special: silencio weekly limit for target
     if spell == "silencio":
         now = now_utc()
         last = silencio_last.get(member.id)
@@ -670,7 +669,6 @@ async def cast(ctx, spell: str, member: discord.Member):
             return await ctx.send("⏳ Silencio can only be cast on this user once per week.")
         silencio_last[member.id] = now
 
-    # Alohomora cooldown for target (24h)
     if spell == "alohomora":
         now = now_utc()
         last = alohomora_cooldowns.get(member.id)
@@ -678,7 +676,6 @@ async def cast(ctx, spell: str, member: discord.Member):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
 
-    # Special: finite (purchasable spell) -> remove most recent effect immediately
     if spell == "finite":
         remove_galleons_local(caster.id, cost)
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
@@ -687,12 +684,10 @@ async def cast(ctx, spell: str, member: discord.Member):
         await expire_effect(member, last_entry["uid"])
         return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_entry['name']}**.")
 
-    # normal deduction + apply
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
 
-    # Additional behavior: if Alohomora start potion game
     if spell == "alohomora":
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
         await announce_room_for(member)
@@ -716,7 +711,6 @@ async def drink(ctx, potion: str, member: discord.Member = None):
 
     remove_galleons_local(caster.id, cost)
 
-    # Bezoar (cleanse) special
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
             to_remove = [e["uid"] for e in active_effects[member.id]["effects"] if (e.get("kind") or "").startswith("potion_") or e.get("name") in POTION_LIBRARY]
@@ -725,25 +719,20 @@ async def drink(ctx, potion: str, member: discord.Member = None):
         await ctx.send(f"🧪 {caster.display_name} used Bezoar on {member.display_name}. Potion effects removed.")
         return
 
-    # Polyjuice special-handling (random house; if chosen == user's own house -> backfire)
     if pd["kind"] == "potion_polyjuice":
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
         user_house = get_user_house(member)
         if user_house == chosen:
-            # backfired: add cat prefix for 24h
             await apply_effect_to_member(member, "polyfail_cat", source="potion")
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name}... it misfired! You get whiskers 🐱 for 24 hours.")
         else:
-            # apply polyjuice effect and give chosen house role for 24h
             meta = {"polyhouse": chosen}
             await apply_effect_to_member(member, "polyjuice", source="potion", meta=meta)
-            # craft a friendly message naming the house
             display_house = chosen.capitalize()
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
         return
 
-    # Normal potion application (felixfelicis, draughtlivingdeath, amortentia, etc.)
     await apply_effect_to_member(member, potion, source="potion")
     await ctx.send(f"🧪 {caster.display_name} gave **{potion.capitalize()}** to {member.display_name}!")
 
@@ -766,7 +755,6 @@ async def choose(ctx, number: int):
     active_potions[user_id]["chosen"] = True
     winning = active_potions[user_id]["winning"]
 
-    # check potion luck effects via active_effects
     luck = 0.0
     data = active_effects.get(user_id)
     if data:
@@ -792,16 +780,13 @@ async def choose(ctx, number: int):
     else:
         await ctx.send(f"💨 {ctx.author.mention} picked potion {number}... nothing happened. Better luck next time!")
 
-    # remove Alohomora role and schedule purge in 30 minutes (do not remove potion effects here)
     await finalize_room_after_choice(ctx.author)
-
-    # cleanup this user's active_potions entry
     del active_potions[user_id]
 
 # -------------------------
 # COMMAND: TRIGGER-GAME (testing) - restricted to Prefects/Head
 # -------------------------
-@bot.command(name="trigger-game", aliases=["trigger_game", "triggergame"])
+@bot.command(name="trigger-game", aliases=["trigger_game", "triggergame"]) 
 async def trigger_game(ctx, member: discord.Member = None):
     if not is_staff_allowed(ctx.author):
         return await ctx.send("❌ You don’t have permission to trigger the test game.")
@@ -809,8 +794,16 @@ async def trigger_game(ctx, member: discord.Member = None):
 
     # Give Alohomora (free test) and start the game
     await apply_effect_to_member(member, "alohomora", source="test")
-    active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": ctx.author.id}
+    winning = pick_winning_potion()
+    active_potions[member.id] = {"winning": winning, "chosen": False, "started_by": ctx.author.id}
     await announce_room_for(member)
+
+    # Reveal the correct answer to the staff who ran the test (DM preferred, fallback to channel)
+    try:
+        await ctx.author.send(f"[TEST] The winning potion for {member.display_name} is **{winning}** (use this to validate the game).")
+    except Exception:
+        await ctx.send(f"[TEST MODE] The winning potion for {member.mention} is **{winning}**. (Visible because DM failed)")
+
     await ctx.send(f"🧪 Testing potion game started for {member.mention} (Prefects test).")
 
 # -------------------------
@@ -818,11 +811,6 @@ async def trigger_game(ctx, member: discord.Member = None):
 # -------------------------
 @bot.command()
 async def finite(ctx, member: discord.Member, effect_name: str = None):
-    """
-    Remove the last applied effect or a specific effect by name.
-    Usage: !finite @user       -> removes last effect
-           !finite @user name  -> removes the most recent effect with that name
-    """
     if member.id not in active_effects:
         return await ctx.send("No active spells/potions on this user.")
 
@@ -845,12 +833,12 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
         return await ctx.send(f"✨ Removed the most recent effect from {member.display_name}.")
 
 # -------------------------
-# Run the bot
+# STARTUP / RUN
 # -------------------------
-
 @bot.event
 async def on_ready():
     load_galleons()
+    load_house_points()
     print(f"{bot.user} connected as Hedwig — ready to serve the wizarding community!")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
