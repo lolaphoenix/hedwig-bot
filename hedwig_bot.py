@@ -4,6 +4,7 @@ import random
 import asyncio
 import uuid
 import discord
+import json
 from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -54,6 +55,11 @@ house_emojis = {
     "ravenclaw": "<:ravenclaw:1398846388430835752>",
     "hufflepuff": "<:hufflepuff:1398846494844387379>",
 }
+
+# --- Persistence Files ---
+GALLEONS_FILE = "galleons.json"
+POINTS_FILE = "points.json"
+
 
 # -------------------------
 # STATE (IN-MEMORY)
@@ -575,6 +581,33 @@ async def leaderboard(ctx):
         result += f"{i}. {name} — {bal} galleons\n"
     await ctx.send(result)
 
+# --- Galleon Economy ---
+galleons = {}
+last_daily = {}
+
+def load_galleons():
+    global galleons
+    try:
+        with open(GALLEONS_FILE, "r") as f:
+            galleons = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        galleons = {}
+
+def save_galleons():
+    with open(GALLEONS_FILE, "w") as f:
+        json.dump(galleons, f)
+
+def get_balance(user_id):
+    return galleons.get(str(user_id), 0)
+
+def add_galleons(user_id, amount):
+    galleons[str(user_id)] = get_balance(user_id) + amount
+    save_galleons()
+
+def remove_galleons(user_id, amount):
+    galleons[str(user_id)] = max(0, get_balance(user_id) - amount)
+    save_galleons()
+
 # -------------------------
 # COMMAND: SHOP (spells + potions)
 # -------------------------
@@ -802,19 +835,13 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
         return await ctx.send(f"✨ Removed the most recent effect from {member.display_name}.")
 
 # -------------------------
-# STARTUP / RUN
-# -------------------------
-@bot.event
-async def on_ready():
-    print(f"{bot.user} connected as Hedwig — ready to serve the wizarding community!")
-
-# -------------------------
 # Run the bot
 # -------------------------
 # --- Run Bot ---
 @bot.event
 async def on_ready():
-    print(f"🦉 Hedwig is online as {bot.user}!")
+    load_galleons()
+    print(f"{bot.user} connected as Hedwig — ready to serve the wizarding community!")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
