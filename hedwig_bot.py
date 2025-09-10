@@ -56,9 +56,52 @@ house_emojis = {
     "hufflepuff": "<:hufflepuff:1398846494844387379>",
 }
 
-# --- Persistence Files ---
-GALLEONS_FILE = "galleons.json"
-POINTS_FILE = "points.json"
+# -------------------------
+# PERSISTENCE: galleons (JSON)
+# -------------------------
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
+
+def load_galleons():
+    """Load galleons from disk into the `galleons` dict. Creates file if missing."""
+    global galleons
+    try:
+        if os.path.exists(GALLEONS_FILE):
+            with open(GALLEONS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # JSON keys are strings — convert to ints
+            galleons = {int(k): int(v) for k, v in raw.items()}
+            print(f"[Hedwig] loaded {len(galleons)} galleon accounts from {GALLEONS_FILE}")
+        else:
+            galleons = {}
+            # create empty file
+            save_galleons()
+            print(f"[Hedwig] created new galleons file at {GALLEONS_FILE}")
+    except Exception as e:
+        print("[Hedwig] Failed to load galleons:", e)
+        galleons = {}
+
+def save_galleons():
+    """Save `galleons` to disk atomically."""
+    try:
+        tmp = GALLEONS_FILE + ".tmp"
+        # convert keys to strings for JSON
+        serializable = {str(k): v for k, v in galleons.items()}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+        os.replace(tmp, GALLEONS_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save galleons:", e)
+
+# Replace your add/remove helpers to persist immediately
+def add_galleons_local(user_id: int, amount: int):
+    galleons[user_id] = get_balance(user_id) + int(amount)
+    save_galleons()
+
+def remove_galleons_local(user_id: int, amount: int):
+    galleons[user_id] = max(0, get_balance(user_id) - int(amount))
+    save_galleons()
 
 
 # -------------------------
@@ -129,12 +172,6 @@ async def set_nickname(member: discord.Member, nickname: str):
 
 def get_balance(user_id: int) -> int:
     return galleons.get(user_id, 0)
-
-def add_galleons_local(user_id: int, amount: int):
-    galleons[user_id] = get_balance(user_id) + amount
-
-def remove_galleons_local(user_id: int, amount: int):
-    galleons[user_id] = max(0, get_balance(user_id) - amount)
 
 def make_effect_uid() -> str:
     return uuid.uuid4().hex
@@ -581,33 +618,6 @@ async def leaderboard(ctx):
         result += f"{i}. {name} — {bal} galleons\n"
     await ctx.send(result)
 
-# --- Galleon Economy ---
-galleons = {}
-last_daily = {}
-
-def load_galleons():
-    global galleons
-    try:
-        with open(GALLEONS_FILE, "r") as f:
-            galleons = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        galleons = {}
-
-def save_galleons():
-    with open(GALLEONS_FILE, "w") as f:
-        json.dump(galleons, f)
-
-def get_balance(user_id):
-    return galleons.get(str(user_id), 0)
-
-def add_galleons(user_id, amount):
-    galleons[str(user_id)] = get_balance(user_id) + amount
-    save_galleons()
-
-def remove_galleons(user_id, amount):
-    galleons[str(user_id)] = max(0, get_balance(user_id) - amount)
-    save_galleons()
-
 # -------------------------
 # COMMAND: SHOP (spells + potions)
 # -------------------------
@@ -837,7 +847,7 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
 # -------------------------
 # Run the bot
 # -------------------------
-# --- Run Bot ---
+
 @bot.event
 async def on_ready():
     load_galleons()
