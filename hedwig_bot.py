@@ -5,6 +5,7 @@ import asyncio
 import uuid
 import discord
 import json
+import time
 from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -363,10 +364,6 @@ POTION_LIBRARY = {
 # -------------------------
 # APPLY / REMOVE EFFECTS
 # -------------------------
-async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
-    """Apply a spell/potion effect and persist it."""
-    expires_at = datetime.utcnow() + timedelta(hours=24)
-    uid = f"{effect_name}_{int(expires_at.timestamp())}"
 
 async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
     """Apply a spell/potion effect and persist it."""
@@ -835,42 +832,35 @@ async def choose(ctx, number: int):
         return await ctx.send(f"🚪 Please use this command in <#{ROOM_OF_REQUIREMENT_ID}>.")
     if number < 1 or number > 5:
         return await ctx.send("🚫 Pick a number between 1 and 5.")
-
     user_id = ctx.author.id
     if user_id not in active_potions:
         return await ctx.send("❌ You don’t have an active potion challenge. Cast Alohomora or drink a potion first.")
     if active_potions[user_id]["chosen"]:
         return await ctx.send("🧪 You already chose a potion for this challenge.")
-
     active_potions[user_id]["chosen"] = True
     winning = active_potions[user_id]["winning"]
-
     # luck modifiers
     luck = 0.0
     data = active_effects.get(user_id)
     if data:
         for e in data["effects"]:
-		if e.get("effect") == "felixfelicis":
-    			luck += 0.5
-		if e.get("effect") == "draughtlivingdeath":
-    			luck -= 0.5
-
+            if e.get("effect") == "felixfelicis":
+                luck += 0.5
+            if e.get("effect") == "draughtlivingdeath":
+                luck -= 0.5
     forced_win = (luck > 0 and random.random() < luck)
     forced_miss = (luck < 0 and random.random() < abs(luck))
-
     final_choice = number
     if forced_win:
         final_choice = winning
     elif forced_miss:
         opts = [i for i in range(1, 6) if i != winning]
         final_choice = random.choice(opts)
-
     if final_choice == winning:
         add_galleons_local(user_id, 100)
         await ctx.send(f"🎉 {ctx.author.mention} picked potion {number} and won **100 galleons**!")
     else:
         await ctx.send(f"💨 {ctx.author.mention} picked potion {number}... nothing happened. Better luck next time!")
-
     await finalize_room_after_choice(ctx.author)
     del active_potions[user_id]
 
@@ -924,21 +914,6 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
         return await ctx.send(f"✨ Removed the most recent effect from {member.display_name}.")
 
 # -------------------------
-# Background Tasks
-# -------------------------
-@tasks.loop(minutes=5)
-async def cleanup_effects():
-    now = time.time()
-    expired = [uid for uid, data in effects.items() if data["expires"] < now]
-    for uid in expired:
-        del effects[uid]
-    if expired:
-        save_effects()
-
-cleanup_effects.start()
-
-
-# -------------------------
 # STARTUP / RUN
 # -------------------------
 @bot.event
@@ -967,7 +942,7 @@ async def on_ready():
                 exp_time = datetime.fromisoformat(e["expires_at"])
                 if exp_time > datetime.utcnow():
                     active_effects[member.id]["effects"].append(e)
-                    asyncio.create_task(schedule_expiry(member, e["uid"], exp_time))
+                    asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
                 else:
                     print(f"[Hedwig] Removing expired effect for {member.display_name}")
             except Exception as err:
@@ -993,3 +968,17 @@ if not TOKEN:
     raise ValueError("❌ DISCORD_TOKEN is missing from your .env file!")
 
 bot.run(TOKEN)
+
+# -------------------------
+# Background Tasks
+# -------------------------
+@tasks.loop(minutes=5)
+async def cleanup_effects():
+    now = time.time()
+    expired = [uid for uid, data in effects.items() if data["expires"] < now]
+    for uid in expired:
+        del effects[uid]
+    if expired:
+        save_effects()
+
+cleanup_effects.start()
