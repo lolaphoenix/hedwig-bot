@@ -211,7 +211,7 @@ EFFECT_LIBRARY = {
     },
     "diffindo": {
         "cost": 30, "kind": "truncate", "length": 5, "duration": 86400,
-        "description": ✂️ Removes the last 5 characters of the target's nickname for 24 hours."
+        "description": "✂️ Removes the last 5 characters of the target's nickname for 24 hours."
     },
     "ebublio": {
         "cost": 20, "kind": "nickname", "prefix": "🫧", "suffix": "🫧", "duration": 86400,
