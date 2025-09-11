@@ -488,15 +488,16 @@ async def purge_room_after_delay(delay_seconds: int):
 @bot.command()
 async def hedwighelp(ctx):
     msg = (
-        "🦉 **Hedwig Help** 🦉\n\n"
+        "🦉 **Hedwig Help** 🦉\n"
         "✨ Student Commands:\n"
-        "`!shop` — View spells & potions\n"
-        "`!cast <spell> @user` — Cast a spell on a user (spells cost galleons)\n"
-        "`!drink <potion> [@user]` — Drink a potion or give to someone\n"
-        "`!balance` — Check your galleons\n"
-        "`!daily` — Collect daily pocket money\n"
-        "`!points` — Show house points\n"
-        "`!choose <1-5>` — Choose a potion in the Room of Requirement\n"
+        "`!shopspells` – View available spells\n"
+        "`!shoppotions` – View available potions\n"
+        "`!cast <spell> @user` – Cast a spell\n"
+        "`!drink <potion>` – Drink a potion\n"
+        "`!balance` – Check your galleons\n"
+        "`!daily` – Collect your daily allowance\n"
+        "`!points` – View house points\n"
+        "`!choose <1–5>` – Choose a potion in Room of Requirement\n"
     )
     await ctx.send(msg)
 
@@ -614,16 +615,22 @@ async def leaderboard(ctx):
 # COMMAND: SHOP (spells + potions)
 # -------------------------
 @bot.command()
-async def shop(ctx):
+async def shopspells(ctx):
+    """Show available spells in the shop."""
     msg = "🪄 **Spell Shop** 🪄\n\n"
     for name, data in EFFECT_LIBRARY.items():
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
         msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+    await ctx.send(msg)
 
-    msg += "🍷 **Potion Shop** 🍷\n\n"
+
+@bot.command()
+async def shoppotions(ctx):
+    """Show available potions in the shop."""
+    msg = "🍷 **Potion Shop** 🍷\n\n"
     for name, data in POTION_LIBRARY.items():
-        if name == "polyfail_cat":
+        if name == "polyfail_cat":  # skip helper entry
             continue
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
