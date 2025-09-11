@@ -55,9 +55,69 @@ house_emojis = {
     "hufflepuff": "<:hufflepuff:1398846494844387379>",
 }
 
+spells = {
+    "tarantallegra": {
+        "emoji": "<:tarantallegra:1415595049411936296>",
+        "description": "Forces the target to dance uncontrollably."
+    },
+    "serpensortia": {
+        "emoji": "<:serpensortia:1415595048124289075>",
+        "description": "Summons a snake to startle your opponent."
+    },
+    "silencio": {
+        "emoji": "<:silencio:1415595046367002624>",
+        "description": "Silences your target, preventing them from speaking."
+    },
+    "lumos": {
+        "emoji": "<:lumos:1415595044357931100>",
+        "description": "Casts light and grants the Lumos role.",
+        "role_id": 1413122717682761788
+    },
+    "incendio": {
+        "emoji": "<:incendio:1415595041191235718>",
+        "description": "Produces flames to light things on fire."
+    },
+    "herbifors": {
+        "emoji": "<:herbifors:1415595039882481674>",
+        "description": "Transforms hair into flowers."
+    },
+    "ebublio": {
+        "emoji": "<:ebublio:1415595038397693982>",
+        "description": "Traps target inside a giant bubble."
+    },
+    "diffindo": {
+        "emoji": "<:diffindo:1415595036250214500>",
+        "description": "Cuts or tears objects apart."
+    },
+    "confundo": {
+        "emoji": "<:confundo:1415595034769625199>",
+        "description": "Confuses your target."
+    },
+    "alohomora": {
+        "emoji": "<:alohomora:1415595033410666629>",
+        "description": "Unlocks doors and windows."
+    },
+    "aguamenti": {
+        "emoji": "<:aguamenti:1415595031644999742>",
+        "description": "Conjures a jet of clean water."
+    },
+    "amortentia": {
+        "emoji": "💖",  # you didn’t give me a custom emoji, so I left heart
+        "description": "Brews a love potion that charms the target.",
+        "role_id": 1414255673973280909
+    },
+    "bezoar": {
+        "emoji": "<:bezoar:1415594792217350255>",
+        "description": "Cures most poisons."
+    }
+}
+
+
 # -------------------------
 # PERSISTENCE: data files
 # -------------------------
+effects = {}  # {user_id: {"effect": str, "expires": timestamp}}
+EFFECTS_FILE = "effects.json"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
@@ -121,6 +181,23 @@ def save_house_points():
         os.replace(tmp, POINTS_FILE)
     except Exception as e:
         print("[Hedwig] Failed to save house points:", e)
+
+# -------------------------
+# Persistence Functions
+# -------------------------
+
+def load_effects():
+    global effects
+    try:
+        with open(EFFECTS_FILE, "r") as f:
+            effects = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        effects = {}
+
+def save_effects():
+    with open(EFFECTS_FILE, "w") as f:
+        json.dump(effects, f, indent=4)
+
 
 # -------------------------
 # STATE (OTHER IN-MEMORY)
@@ -287,75 +364,66 @@ POTION_LIBRARY = {
 # APPLY / REMOVE EFFECTS
 # -------------------------
 async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
-    uid = make_effect_uid()
-    now = now_utc()
+    """Apply a spell/potion effect and persist it."""
+    expires_at = datetime.utcnow() + timedelta(hours=24)
+    uid = f"{effect_name}_{int(expires_at.timestamp())}"
 
-    if effect_name in EFFECT_LIBRARY:
-        ed = EFFECT_LIBRARY[effect_name].copy()
-    elif effect_name in POTION_LIBRARY:
-        ed = POTION_LIBRARY[effect_name].copy()
-    else:
-        print("Unknown effect:", effect_name)
-        return
+async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
+    """Apply a spell/potion effect and persist it."""
+    expires_at = datetime.utcnow() + timedelta(hours=24)
+    uid = f"{effect_name}_{int(expires_at.timestamp())}"
 
-    duration = ed.get("duration", 86400)
-    expires_at = now + timedelta(seconds=duration) if duration and duration > 0 else None
+    # Look up the effect definition (spells + potions merged)
+    effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name, {})
 
     entry = {
         "uid": uid,
+        "effect": effect_name,
         "name": effect_name,
-        "kind": ed.get("kind"),
-        "prefix": ed.get("prefix"),
-        "suffix": ed.get("suffix"),
-        "length": ed.get("length"),
-        "role_id": ed.get("role_id"),
-        "expires_at": expires_at,
-        "applied_at": now,
         "source": source,
+        "expires_at": expires_at.isoformat(),
+        **effect_def,
+        "meta": meta or {}
     }
 
-    if meta:
-        entry.update(meta)
+    # If effect grants a role immediately (e.g. Lumos, Amortentia, Alohomora)
+    role_id = entry.get("role_id")
+    if role_id:
+        role = member.guild.get_role(role_id)
+        if role and role not in member.roles:
+            await safe_add_role(member, role)
 
     if member.id not in active_effects:
         active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
     active_effects[member.id]["effects"].append(entry)
 
-    kind = entry["kind"]
+    # --- persist to file ---
+    effects[str(member.id)] = {
+        "original_nick": active_effects[member.id]["original_nick"],
+        "effects": active_effects[member.id]["effects"]
+    }
+    save_effects()
 
-    if kind == "role_alohomora":
-        guild_role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-        if guild_role:
-            await safe_add_role(member, guild_role)
+    # schedule expiry
+    asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
 
-    elif kind == "role_lumos":
-        role = member.guild.get_role(ROLE_IDS["lumos"])
-        if role:
-            await safe_add_role(member, role)
+    # Apply the visible effect right away (emoji in nickname, role, etc.)
+    await update_member_display(member)
 
-    elif kind == "potion_amortentia":
-        role = member.guild.get_role(entry.get("role_id"))
-        if role:
-            await safe_add_role(member, role)
 
-    elif kind == "potion_polyjuice":
-        polyhouse = entry.get("polyhouse")
-        if polyhouse:
-            role_id = ROLE_IDS.get(polyhouse)
-            role = member.guild.get_role(role_id)
-            if role:
-                await safe_add_role(member, role)
+    # --- persist to file ---
+    effects[str(member.id)] = {
+        "original_nick": active_effects[member.id]["original_nick"],
+        "effects": active_effects[member.id]["effects"]
+    }
+    save_effects()
 
-    elif kind == "silence":
-        silenced_until[member.id] = entry["expires_at"]
+    # schedule expiry
+    asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
 
-    await recompute_nickname(member)
-
-    if entry["expires_at"]:
-        asyncio.create_task(schedule_expiry(member.id, uid, entry["expires_at"]))
-
-    return uid
+    # Apply the visible effect right away (emoji in nickname, role, etc.)
+    await update_member_display(member)
 
 async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     delta = (expires_at - now_utc()).total_seconds()
@@ -373,58 +441,33 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
                 del active_effects[user_id]
 
 async def expire_effect(member: discord.Member, uid: str):
-    data = active_effects.get(member.id)
-    if not data:
-        return
-    effects = data["effects"]
-    found = None
-    for e in effects:
-        if e["uid"] == uid:
-            found = e
-            break
-    if not found:
+    """Remove a single effect by uid and persist changes."""
+    if member.id not in active_effects:
         return
 
-    effects.remove(found)
-    kind = found.get("kind")
+    active_effects[member.id]["effects"] = [
+        e for e in active_effects[member.id]["effects"] if e["uid"] != uid
+    ]
 
-    if kind == "role_alohomora":
-        role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-        if role and role in member.roles:
-            await safe_remove_role(member, role)
+    if active_effects[member.id]["effects"]:
+        effects[str(member.id)] = active_effects[member.id]
+    else:
+        effects.pop(str(member.id), None)
+        active_effects.pop(member.id, None)
 
-    elif kind == "role_lumos":
-        role = member.guild.get_role(ROLE_IDS["lumos"])
-        if role and role in member.roles:
-            await safe_remove_role(member, role)
-
-    elif kind == "potion_amortentia":
-        role = member.guild.get_role(found.get("role_id"))
-        if role and role in member.roles:
-            await safe_remove_role(member, role)
-
-    elif kind == "potion_polyjuice":
-        polyhouse = found.get("polyhouse")
-        if polyhouse:
-            role_id = ROLE_IDS.get(polyhouse)
+    save_effects()
+    # If the expired effect granted a role, remove it
+    expired = next((e for e in active_effects.get(member.id, {}).get("effects", [])
+                    if e["uid"] == uid), None)
+    if expired:
+        role_id = expired.get("role_id")
+        if role_id:
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
 
-    elif kind == "silence":
-        silenced_until.pop(member.id, None)
+    await update_member_display(member)
 
-    if effects:
-        await recompute_nickname(member)
-    else:
-        orig = data.get("original_nick", None)
-        if orig is None:
-            orig = member.display_name
-        try:
-            await member.edit(nick=orig)
-        except Exception:
-            pass
-        del active_effects[member.id]
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
@@ -451,6 +494,52 @@ async def recompute_nickname(member: discord.Member):
             if prefix:
                 base = f"{prefix}{base}"
     await set_nickname(member, base)
+
+async def update_member_display(member: discord.Member):
+    """Reapply nickname, roles, and silencing state based on active effects."""
+    await recompute_nickname(member)
+
+    # Handle role-based effects
+    if member.id in active_effects:
+        for e in active_effects[member.id]["effects"]:
+            kind = e.get("kind")
+
+            # Lumos role
+            if kind == "role_lumos":
+                role = member.guild.get_role(ROLE_IDS["lumos"])
+                if role:
+                    await safe_add_role(member, role)
+
+            # Amortentia role
+            if kind == "potion_amortentia":
+                rid = e.get("role_id")
+                role = member.guild.get_role(rid)
+                if role:
+                    await safe_add_role(member, role)
+
+            # Alohomora Room role
+            if kind == "role_alohomora":
+                role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+                if role:
+                    await safe_add_role(member, role)
+
+            # Polyjuice (random house)
+            if kind == "potion_polyjuice":
+                chosen = e.get("meta", {}).get("polyhouse")
+                if chosen and chosen in ROLE_IDS:
+                    role = member.guild.get_role(ROLE_IDS[chosen])
+                    if role:
+                        await safe_add_role(member, role)
+
+            # Silencio (prevent casting)
+            if kind == "silence":
+                exp_str = e.get("expires_at")
+                if exp_str:
+                    try:
+                        silenced_until[member.id] = datetime.fromisoformat(exp_str)
+                    except Exception:
+                        pass
+
 
 # -------------------------
 # ROOM / ALOHOMORA GAME HELPERS
@@ -492,8 +581,8 @@ async def hedwighelp(ctx):
         "✨ Student Commands:\n"
         "`!shopspells` – View available spells\n"
         "`!shoppotions` – View available potions\n"
-        "`!cast <spell> @user` – Cast a spell\n"
-        "`!drink <potion>` – Drink a potion\n"
+        "`!cast <spell> @user` – Cast a spell and include a target such as yourself or another person\n"
+        "`!drink <potion> @user` – Drink a potion and include a target such as yourself or another person\n"
         "`!balance` – Check your galleons\n"
         "`!daily` – Collect your daily allowance\n"
         "`!points` – View house points\n"
@@ -622,6 +711,7 @@ async def shopspells(ctx):
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
         msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+    msg += "Use `!cast <spell> @user` to buy and spells!\n"
     await ctx.send(msg)
 
 
@@ -636,7 +726,7 @@ async def shoppotions(ctx):
         desc = data.get("description", "No description available.")
         msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
 
-    msg += "Use `!cast <spell> @user` to cast spells and `!drink <potion> [@user]` to purchase/drink potions.\n"
+    msg += "Use `!drink <potion> [@user]` to buy and drink potions.\n"
     await ctx.send(msg)
 
 # -------------------------
@@ -651,7 +741,7 @@ async def cast(ctx, spell: str, member: discord.Member):
         return await ctx.send("🤫 You are silenced and cannot cast spells right now.")
 
     if spell not in EFFECT_LIBRARY:
-        return await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shop`.")
+        return await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shopspells`.")
 
     ed = EFFECT_LIBRARY[spell]
     cost = ed.get("cost", 0)
@@ -679,7 +769,7 @@ async def cast(ctx, spell: str, member: discord.Member):
             return await ctx.send("❌ That user has no active spells/potions to finite.")
         last_entry = active_effects[member.id]["effects"][-1]
         await expire_effect(member, last_entry["uid"])
-        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_entry['name']}**.")
+        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_entry['effect']}**.")
 
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
@@ -699,7 +789,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     caster = ctx.author
 
     if potion not in POTION_LIBRARY:
-        return await ctx.send("❌ That potion doesn’t exist. Check the shop with `!shop`.")
+        return await ctx.send("❌ That potion doesn’t exist. Check the shop with `!shoppotions`.")
 
     pd = POTION_LIBRARY[potion]
     cost = pd.get("cost", 0)
@@ -711,7 +801,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     # Bezoar (cleanse)
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
-            to_remove = [e["uid"] for e in active_effects[member.id]["effects"] if (e.get("kind") or "").startswith("potion_") or e.get("name") in POTION_LIBRARY]
+            to_remove = [e["uid"] for e in active_effects[member.id]["effects"] if (e.get("kind") or "").startswith("potion_") or e.get("effect") in POTION_LIBRARY]
             for uid in to_remove:
                 await expire_effect(member, uid)
         await ctx.send(f"🧪 {caster.display_name} used Bezoar on {member.display_name}. Potion effects removed.")
@@ -760,10 +850,10 @@ async def choose(ctx, number: int):
     data = active_effects.get(user_id)
     if data:
         for e in data["effects"]:
-            if e["name"] == "felixfelicis":
-                luck += 0.5
-            if e["name"] == "draughtlivingdeath":
-                luck -= 0.5
+		if e.get("effect") == "felixfelicis":
+    			luck += 0.5
+		if e.get("effect") == "draughtlivingdeath":
+    			luck -= 0.5
 
     forced_win = (luck > 0 and random.random() < luck)
     forced_miss = (luck < 0 and random.random() < abs(luck))
@@ -834,16 +924,69 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
         return await ctx.send(f"✨ Removed the most recent effect from {member.display_name}.")
 
 # -------------------------
+# Background Tasks
+# -------------------------
+@tasks.loop(minutes=5)
+async def cleanup_effects():
+    now = time.time()
+    expired = [uid for uid, data in effects.items() if data["expires"] < now]
+    for uid in expired:
+        del effects[uid]
+    if expired:
+        save_effects()
+
+cleanup_effects.start()
+
+
+# -------------------------
 # STARTUP / RUN
 # -------------------------
 @bot.event
 async def on_ready():
     load_galleons()
     load_house_points()
-    print(f"{bot.user} connected as Hedwig — ready to serve the wizarding community!")
-    channel = bot.get_channel(1410875871249829898)  # replace with actual ID
-    if channel:
-        await channel.send("🦉 Hedwig is flying again!")
+    load_effects()
+
+    guild = bot.get_guild(1398801863549259796)
+
+    new_effects = {}  # <- only keep active effects
+
+    # Rehydrate saved effects
+    for uid, data in effects.items():
+        member = guild.get_member(int(uid)) if guild else None
+        if not member:
+            continue
+
+        active_effects[member.id] = {
+            "original_nick": data.get("original_nick", member.display_name),
+            "effects": []
+        }
+
+        for e in data.get("effects", []):
+            try:
+                exp_time = datetime.fromisoformat(e["expires_at"])
+                if exp_time > datetime.utcnow():
+                    active_effects[member.id]["effects"].append(e)
+                    asyncio.create_task(schedule_expiry(member, e["uid"], exp_time))
+                else:
+                    print(f"[Hedwig] Removing expired effect for {member.display_name}")
+            except Exception as err:
+                print(f"[Hedwig] Error restoring effect for {member.display_name}: {err}")
+
+        if active_effects[member.id]["effects"]:
+            new_effects[uid] = active_effects[member.id]
+
+    # Replace in-memory effects and persist cleaned file
+    effects.clear()
+    effects.update(new_effects)
+    save_effects()
+
+    owlry_channel = bot.get_channel(OWLRY_CHANNEL_ID)
+    if owlry_channel:
+        await owlry_channel.send("🦉 Hedwig is flying again!")
+
+    print(f"[Hedwig] Logged in as {bot.user}")
+
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
