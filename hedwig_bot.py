@@ -834,6 +834,9 @@ async def on_ready():
     load_galleons()
     load_house_points()
     print(f"{bot.user} connected as Hedwig — ready to serve the wizarding community!")
+    channel = bot.get_channel(1410875871249829898)  # replace with actual ID
+    if channel:
+        await channel.send("🦉 Hedwig is flying again!")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
