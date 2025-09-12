@@ -6,6 +6,7 @@ import uuid
 import discord
 import json
 import time
+import signal
 from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -59,57 +60,44 @@ house_emojis = {
 spells = {
     "tarantallegra": {
         "emoji": "<:tarantallegra:1415595049411936296>",
-        "description": "Forces the target to dance uncontrollably."
     },
     "serpensortia": {
         "emoji": "<:serpensortia:1415595048124289075>",
-        "description": "Summons a snake to startle your opponent."
     },
     "silencio": {
         "emoji": "<:silencio:1415595046367002624>",
-        "description": "Silences your target, preventing them from speaking."
     },
     "lumos": {
         "emoji": "<:lumos:1415595044357931100>",
-        "description": "Casts light and grants the Lumos role.",
         "role_id": 1413122717682761788
     },
     "incendio": {
         "emoji": "<:incendio:1415595041191235718>",
-        "description": "Produces flames to light things on fire."
     },
     "herbifors": {
         "emoji": "<:herbifors:1415595039882481674>",
-        "description": "Transforms hair into flowers."
     },
     "ebublio": {
         "emoji": "<:ebublio:1415595038397693982>",
-        "description": "Traps target inside a giant bubble."
     },
     "diffindo": {
         "emoji": "<:diffindo:1415595036250214500>",
-        "description": "Cuts or tears objects apart."
     },
     "confundo": {
         "emoji": "<:confundo:1415595034769625199>",
-        "description": "Confuses your target."
     },
     "alohomora": {
         "emoji": "<:alohomora:1415595033410666629>",
-        "description": "Unlocks doors and windows."
     },
     "aguamenti": {
         "emoji": "<:aguamenti:1415595031644999742>",
-        "description": "Conjures a jet of clean water."
     },
     "amortentia": {
         "emoji": "💖",  # you didn’t give me a custom emoji, so I left heart
-        "description": "Brews a love potion that charms the target.",
         "role_id": 1414255673973280909
     },
     "bezoar": {
         "emoji": "<:bezoar:1415594792217350255>",
-        "description": "Cures most poisons."
     }
 }
 
@@ -335,29 +323,29 @@ EFFECT_LIBRARY = {
 
 POTION_LIBRARY = {
     "felixfelicis": {
+        "emoji": "🍀",
         "cost": 60, "kind": "potion_luck_good", "prefix": "🍀", "duration": 86400,
         "description": "🍀 Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
     },
     "draughtlivingdeath": {
+        "emoji": "💀",
         "cost": 50, "kind": "potion_luck_bad", "prefix": "💀", "duration": 86400,
         "description": "💀 Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
     },
     "amortentia": {
+        "emoji": "💖",
         "cost": 70, "kind": "potion_amortentia", "prefix": "💖", "role_id": ROLE_IDS["amortentia"], "duration": 86400,
         "description": "💖 Amortentia: grants the Amortentia role (color) and adds 💖 to nickname for 24 hours."
     },
     "polyjuice": {
+        "emoji": "🧪",
         "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
         "description": "🧪 Polyjuice Potion: randomly grants access to a random house common-room role for 24 hours (or backfires)."
     },
     "bezoar": {
+        "emoji": "<:bezoar:1415594792217350255>",
         "cost": 30, "kind": "potion_bezoar", "duration": 0,
         "description": "🪨 Bezoar: removes active potion effects from the target instantly."
-    },
-    # helper "polyfail" implemented as a potion-like effect to add cat prefix if polyjuice backfires
-    "polyfail_cat": {
-        "cost": 0, "kind": "nickname", "prefix": "🐱", "suffix": "", "duration": 86400,
-        "description": "🐱 (polyjuice backfire) Adds a cat emoji to the front of the nickname for 24 hours."
     },
 }
 
@@ -409,18 +397,8 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     await update_member_display(member)
 
 
-    # --- persist to file ---
-    effects[str(member.id)] = {
-        "original_nick": active_effects[member.id]["original_nick"],
-        "effects": active_effects[member.id]["effects"]
-    }
-    save_effects()
-
     # schedule expiry
     asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
-
-    # Apply the visible effect right away (emoji in nickname, role, etc.)
-    await update_member_display(member)
 
 async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     delta = (expires_at - now_utc()).total_seconds()
@@ -442,20 +420,24 @@ async def expire_effect(member: discord.Member, uid: str):
     if member.id not in active_effects:
         return
 
+    # find the effect object before we remove it
+    expired = next((e for e in active_effects[member.id]["effects"] if e["uid"] == uid), None)
+
+    # remove it
     active_effects[member.id]["effects"] = [
         e for e in active_effects[member.id]["effects"] if e["uid"] != uid
     ]
 
-    if active_effects[member.id]["effects"]:
+    # persist or cleanup
+    if active_effects.get(member.id, {}).get("effects"):
         effects[str(member.id)] = active_effects[member.id]
     else:
         effects.pop(str(member.id), None)
         active_effects.pop(member.id, None)
 
     save_effects()
+
     # If the expired effect granted a role, remove it
-    expired = next((e for e in active_effects.get(member.id, {}).get("effects", [])
-                    if e["uid"] == uid), None)
     if expired:
         role_id = expired.get("role_id")
         if role_id:
@@ -464,7 +446,6 @@ async def expire_effect(member: discord.Member, uid: str):
                 await safe_remove_role(member, role)
 
     await update_member_display(member)
-
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
@@ -705,12 +686,12 @@ async def shopspells(ctx):
     """Show available spells in the shop."""
     msg = "🪄 **Spell Shop** 🪄\n\n"
     for name, data in EFFECT_LIBRARY.items():
+        emoji = spells.get(name, {}).get("emoji", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-        msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
-    msg += "Use `!cast <spell> @user` to buy and spells!\n"
+        msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+    msg += "Use `!cast <spell> @user` to buy and cast spells!\n"
     await ctx.send(msg)
-
 
 @bot.command()
 async def shoppotions(ctx):
@@ -719,9 +700,10 @@ async def shoppotions(ctx):
     for name, data in POTION_LIBRARY.items():
         if name == "polyfail_cat":  # skip helper entry
             continue
+        emoji = data.get("emoji", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-        msg += f"**{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+        msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
 
     msg += "Use `!drink <potion> [@user]` to buy and drink potions.\n"
     await ctx.send(msg)
@@ -768,6 +750,11 @@ async def cast(ctx, spell: str, member: discord.Member):
         await expire_effect(member, last_entry["uid"])
         return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_entry['effect']}**.")
 
+    # Diffindo special: if target's display name is 5 chars or less, spell fails and costs nothing
+    if spell == "diffindo":
+        if len(member.display_name) <= 5:
+            return await ctx.send("Your spell bounces off the wall and misses its target. No galleons have been spent. Try another target.")
+
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
@@ -792,6 +779,10 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     cost = pd.get("cost", 0)
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to buy that potion!")
+
+    if pd.get("kind") == "potion_polyjuice":
+    	if member.id in active_effects and any(e.get("effect") == "polyjuice" for e in active_effects[member.id]["effects"]):
+        	return await ctx.send("You try to imbibe another Polyjuice, but can't get it down. 🤢 No galleons have been spent. Try again later.")
 
     remove_galleons_local(caster.id, cost)
 
@@ -967,7 +958,29 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("❌ DISCORD_TOKEN is missing from your .env file!")
 
-bot.run(TOKEN)
+# graceful shutdown notifier to Owlry
+def _shutdown_signal_handler(sig, frame):
+    async def _do_shutdown():
+        ch = bot.get_channel(OWLRY_CHANNEL_ID)
+        if ch:
+            try:
+                await ch.send(":owl: Hedwig is heading back to her roost now!")
+            except Exception:
+                pass
+        # close the bot cleanly
+        try:
+            await bot.close()
+        except Exception:
+            pass
+
+    try:
+        asyncio.get_event_loop().create_task(_do_shutdown())
+    except RuntimeError:
+        # loop not running yet — ignore
+        pass
+
+signal.signal(signal.SIGINT, _shutdown_signal_handler)
+signal.signal(signal.SIGTERM, _shutdown_signal_handler)
 
 # -------------------------
 # Background Tasks
@@ -982,3 +995,5 @@ async def cleanup_effects():
         save_effects()
 
 cleanup_effects.start()
+
+bot.run(TOKEN)
