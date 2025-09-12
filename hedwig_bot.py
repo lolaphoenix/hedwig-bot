@@ -295,11 +295,6 @@ EFFECT_LIBRARY = {
         "prefix": "<:herbifors:1415595039882481674>", "suffix": "<:herbifors:1415595039882481674>", "duration": 86400,
         "description": "Gives the target a floral nickname for 24 hours."
     },
-    "locomotorwibbly": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:locomotorwibbly_emoji_id>", "suffix": "<:locomotorwibbly_emoji_id>", "duration": 86400,
-        "description": "Makes the target's nickname wobble (jelly emoji) for 24 hours."
-    },
     "serpensortia": {
         "cost": 20, "kind": "nickname",
         "prefix": "<:serpensortia:1415595048124289075>", "suffix": "<:serpensortia:1415595048124289075>", "duration": 86400,
@@ -336,12 +331,12 @@ EFFECT_LIBRARY = {
 
 POTION_LIBRARY = {
     "felixfelicis": {
-        "emoji": "<:felixfelicis_emoji_id>",  # use your real emoji here
+        "emoji": "<:felixfelicis:1414255673973280908>",  # use your real emoji here
         "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis_emoji_id>", "duration": 86400,
         "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
     },
     "draughtlivingdeath": {
-        "emoji": "<:draughtlivingdeath_emoji_id>", 
+        "emoji": "<:draughtlivingdeath:1414255673973280910>", 
         "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath_emoji_id>", "duration": 86400,
         "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
     },
@@ -351,7 +346,7 @@ POTION_LIBRARY = {
         "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname for 24 hours."
     },
     "polyjuice": {
-        "emoji": "<:polyjuice_emoji_id>",
+        "emoji": "<:polyjuice:1414255673973280911>",
         "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
         "description": "Polyjuice Potion: randomly grants access to a random house common-room role for 24 hours (or backfires)."
     },
@@ -707,12 +702,14 @@ async def shopspells(ctx):
     for name, data in EFFECT_LIBRARY.items():
         if name == "polyfail_cat":
             continue  # Skip internal helper effect
-        emoji = data.get("emoji", "")
+
+        # Prefer explicit emoji key, otherwise fallback to prefix or nothing
+        emoji = data.get("emoji") or data.get("prefix", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-        # Only show if emoji is a custom Discord emoji (start with <: and end with >)
-        if emoji.startswith("<:") and emoji.endswith(">"):
-            msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+
+        msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+
     msg += "Use `!cast <spell> @user` to buy and cast spells!\n"
     await ctx.send(msg)
 
