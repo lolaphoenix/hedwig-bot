@@ -7,7 +7,7 @@ import discord
 import json
 import time
 import signal
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
@@ -107,7 +107,10 @@ spells = {
 # -------------------------
 effects = {}  # {user_id: {"effect": str, "expires": timestamp}}
 EFFECTS_FILE = "effects.json"
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+try:
+    DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+except NameError:
+    DATA_DIR = os.path.join(os.getcwd(), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
 POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
@@ -349,6 +352,16 @@ POTION_LIBRARY = {
     },
 }
 
+EFFECT_LIBRARY["polyfail_cat"] = {
+    "emoji": "🐱",
+    "cost": 0,
+    "kind": "nickname",
+    "prefix": "🐱",
+    "suffix": "",
+    "duration": 86400,
+    "description": "Polyjuice misfire! Get whiskers for 24 hours.",
+}
+
 # -------------------------
 # APPLY / REMOVE EFFECTS
 # -------------------------
@@ -396,10 +409,6 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     # Apply the visible effect right away (emoji in nickname, role, etc.)
     await update_member_display(member)
 
-
-    # schedule expiry
-    asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
-
 async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     delta = (expires_at - now_utc()).total_seconds()
     if delta > 0:
@@ -418,23 +427,18 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
 async def expire_effect(member: discord.Member, uid: str):
     """Remove a single effect by uid and persist changes."""
     if member.id not in active_effects:
+        effects.pop(str(member.id), None)  # <-- Also cleanup from file
+        save_effects()
         return
-
-    # find the effect object before we remove it
     expired = next((e for e in active_effects[member.id]["effects"] if e["uid"] == uid), None)
-
-    # remove it
     active_effects[member.id]["effects"] = [
         e for e in active_effects[member.id]["effects"] if e["uid"] != uid
     ]
-
-    # persist or cleanup
     if active_effects.get(member.id, {}).get("effects"):
         effects[str(member.id)] = active_effects[member.id]
     else:
         effects.pop(str(member.id), None)
         active_effects.pop(member.id, None)
-
     save_effects()
 
     # If the expired effect granted a role, remove it
@@ -909,6 +913,8 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
 # -------------------------
 @bot.event
 async def on_ready():
+    if not cleanup_effects.is_running():
+        cleanup_effects.start()
     load_galleons()
     load_house_points()
     load_effects()
@@ -958,42 +964,36 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("❌ DISCORD_TOKEN is missing from your .env file!")
 
-# graceful shutdown notifier to Owlry
-def _shutdown_signal_handler(sig, frame):
-    async def _do_shutdown():
-        ch = bot.get_channel(OWLRY_CHANNEL_ID)
-        if ch:
-            try:
-                await ch.send(":owl: Hedwig is heading back to her roost now!")
-            except Exception:
-                pass
-        # close the bot cleanly
-        try:
-            await bot.close()
-        except Exception:
-            pass
-
-    try:
-        asyncio.get_event_loop().create_task(_do_shutdown())
-    except RuntimeError:
-        # loop not running yet — ignore
-        pass
-
-signal.signal(signal.SIGINT, _shutdown_signal_handler)
-signal.signal(signal.SIGTERM, _shutdown_signal_handler)
-
 # -------------------------
 # Background Tasks
 # -------------------------
 @tasks.loop(minutes=5)
 async def cleanup_effects():
-    now = time.time()
-    expired = [uid for uid, data in effects.items() if data["expires"] < now]
-    for uid in expired:
-        del effects[uid]
+    """Remove expired effects from memory and save file."""
+    now = datetime.utcnow()
+    expired = []
+
+    for uid, data in list(effects.items()):
+        new_effects = []
+        for e in data.get("effects", []):
+            try:
+                exp_time = datetime.fromisoformat(e["expires_at"])
+            except Exception:
+                continue
+
+            if now >= exp_time:
+                expired.append((uid, e["uid"]))
+            else:
+                new_effects.append(e)
+
+        data["effects"] = new_effects
+        if not new_effects:
+            effects.pop(uid, None)
+
     if expired:
         save_effects()
+        print(f"[Hedwig] Cleaned up {len(expired)} expired effects")
 
-cleanup_effects.start()
+
 
 bot.run(TOKEN)
