@@ -93,7 +93,7 @@ spells = {
         "emoji": "<:aguamenti:1415595031644999742>",
     },
     "amortentia": {
-        "emoji": "💖",  # you didn’t give me a custom emoji, so I left heart
+        "emoji": "<:amortentia:1414255673973280909>",  
         "role_id": 1414255673973280909
     },
     "bezoar": {
@@ -374,6 +374,12 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     # Look up the effect definition (spells + potions merged)
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name, {})
 
+    # Override prefix with custom emoji string from spells if available
+    emoji_str = spells.get(effect_name, {}).get("emoji")
+    if emoji_str:
+        effect_def["prefix"] = emoji_str
+
+    # Compose the effect entry with updated prefix
     entry = {
         "uid": uid,
         "effect": effect_name,
@@ -687,13 +693,16 @@ async def leaderboard(ctx):
 # -------------------------
 @bot.command()
 async def shopspells(ctx):
-    """Show available spells in the shop."""
     msg = "🪄 **Spell Shop** 🪄\n\n"
     for name, data in EFFECT_LIBRARY.items():
-        emoji = spells.get(name, {}).get("emoji", "")
+    	if name == "polyfail_cat":
+        	continue  # Skip internal helper effect
+        emoji = data.get("emoji", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-        msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
+        # Only show if emoji is a custom Discord emoji (start with <: and end with >)
+        if emoji.startswith("<:") and emoji.endswith(">"):
+            msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
     msg += "Use `!cast <spell> @user` to buy and cast spells!\n"
     await ctx.send(msg)
 
