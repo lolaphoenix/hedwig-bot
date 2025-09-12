@@ -271,51 +271,61 @@ def get_user_house(member: discord.Member):
 # -------------------------
 EFFECT_LIBRARY = {
     "aguamenti": {
-        "cost": 20, "kind": "nickname", "prefix": "🌊", "suffix": "🌊", "duration": 86400,
-        "description": "💧 Surrounds the target's nickname with 🌊 for 24 hours."
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:aguamenti:1415595031644999742>", "suffix": "<:aguamenti:1415595031644999742>", "duration": 86400,
+        "description": "Surrounds the target's nickname with water for 24 hours."
     },
     "confundo": {
-        "cost": 25, "kind": "nickname", "prefix": "❓CONFUNDED - ", "suffix": "", "duration": 86400,
-        "description": "❓ Prefixes CONFUNDED to the target's nickname for 24 hours."
+        "cost": 25, "kind": "nickname",
+        "prefix": "<:confundo:1415595034769625199>", "suffix": "", "duration": 86400,
+        "description": "Prefixes CONFUNDED to the target's nickname for 24 hours."
     },
     "diffindo": {
-        "cost": 30, "kind": "truncate", "length": 5, "duration": 86400,
-        "description": "✂️ Removes the last 5 characters of the target's nickname for 24 hours."
+        "cost": 30, "kind": "truncate",
+        "length": 5, "duration": 86400,
+        "description": "Removes the last 5 characters of the target's nickname for 24 hours."
     },
     "ebublio": {
-        "cost": 20, "kind": "nickname", "prefix": "🫧", "suffix": "🫧", "duration": 86400,
-        "description": "🫧 Surrounds the target's nickname with bubbles for 24 hours."
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:ebublio:1415595038397693982>", "suffix": "<:ebublio:1415595038397693982>", "duration": 86400,
+        "description": "Surrounds the target's nickname with bubbles for 24 hours."
     },
     "herbifors": {
-        "cost": 20, "kind": "nickname", "prefix": "🌸", "suffix": "🌸", "duration": 86400,
-        "description": "🌸 Gives the target a floral nickname for 24 hours."
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:herbifors:1415595039882481674>", "suffix": "<:herbifors:1415595039882481674>", "duration": 86400,
+        "description": "Gives the target a floral nickname for 24 hours."
     },
     "locomotorwibbly": {
-        "cost": 20, "kind": "nickname", "prefix": "🍮", "suffix": "🍮", "duration": 86400,
-        "description": "🍮 Makes the target's nickname wobble (jelly emoji) for 24 hours."
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:locomotorwibbly_emoji_id>", "suffix": "<:locomotorwibbly_emoji_id>", "duration": 86400,
+        "description": "Makes the target's nickname wobble (jelly emoji) for 24 hours."
     },
     "serpensortia": {
-        "cost": 20, "kind": "nickname", "prefix": "🐍", "suffix": "🐍", "duration": 86400,
-        "description": "🐍 Surrounds the target's nickname with snake emojis for 24 hours."
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:serpensortia:1415595048124289075>", "suffix": "<:serpensortia:1415595048124289075>", "duration": 86400,
+        "description": "Surrounds the target's nickname with snake emojis for 24 hours."
     },
     "tarantallegra": {
-        "cost": 20, "kind": "nickname", "prefix": "💃", "suffix": "💃", "duration": 86400,
-        "description": "💃 Adds dancing emojis around the target's nickname for 24 hours."
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:tarantallegra:1415595049411936296>", "suffix": "<:tarantallegra:1415595049411936296>", "duration": 86400,
+        "description": "Adds dancing emojis around the target's nickname for 24 hours."
     },
     "incendio": {
-        "cost": 25, "kind": "nickname", "prefix": "🔥", "suffix": "🔥", "duration": 86400,
-        "description": "🔥 Adds flames to the target's nickname for 24 hours."
+        "cost": 25, "kind": "nickname",
+        "prefix": "<:incendio:1415595041191235718>", "suffix": "<:incendio:1415595041191235718>", "duration": 86400,
+        "description": "Adds flames to the target's nickname for 24 hours."
     },
     "silencio": {
         "cost": 40, "kind": "silence", "duration": 86400, "weekly_limit_days": 7,
-        "description": "🤫 Silences the target from casting spells for 24 hours (one use per week)."
+        "description": "Silences the target from casting spells for 24 hours (one use per week)."
     },
     "alohomora": {
         "cost": 50, "kind": "role_alohomora", "duration": 86400,
         "description": "🔑 Grants access to the Room of Requirement for 24 hours and starts the potion game."
     },
     "lumos": {
-        "cost": 15, "kind": "role_lumos", "prefix": "⭐", "duration": 86400,
+        "cost": 15, "kind": "role_lumos",
+        "prefix": "<:lumos:1415595044357931100>", "duration": 86400,
         "description": "⭐ Gives the Lumos role and a star prefix to the nickname for 24 hours."
     },
     "finite": {
@@ -326,29 +336,29 @@ EFFECT_LIBRARY = {
 
 POTION_LIBRARY = {
     "felixfelicis": {
-        "emoji": "🍀",
-        "cost": 60, "kind": "potion_luck_good", "prefix": "🍀", "duration": 86400,
-        "description": "🍀 Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
+        "emoji": "<:felixfelicis_emoji_id>",  # use your real emoji here
+        "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis_emoji_id>", "duration": 86400,
+        "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
     },
     "draughtlivingdeath": {
-        "emoji": "💀",
-        "cost": 50, "kind": "potion_luck_bad", "prefix": "💀", "duration": 86400,
-        "description": "💀 Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
+        "emoji": "<:draughtlivingdeath_emoji_id>", 
+        "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath_emoji_id>", "duration": 86400,
+        "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
     },
     "amortentia": {
-        "emoji": "💖",
-        "cost": 70, "kind": "potion_amortentia", "prefix": "💖", "role_id": ROLE_IDS["amortentia"], "duration": 86400,
-        "description": "💖 Amortentia: grants the Amortentia role (color) and adds 💖 to nickname for 24 hours."
+        "emoji": "<:amortentia:1414255673973280909>",
+        "cost": 70, "kind": "potion_amortentia", "prefix": "<:amortentia:1414255673973280909>", "role_id": ROLE_IDS["amortentia"], "duration": 86400,
+        "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname for 24 hours."
     },
     "polyjuice": {
-        "emoji": "🧪",
+        "emoji": "<:polyjuice_emoji_id>",
         "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
-        "description": "🧪 Polyjuice Potion: randomly grants access to a random house common-room role for 24 hours (or backfires)."
+        "description": "Polyjuice Potion: randomly grants access to a random house common-room role for 24 hours (or backfires)."
     },
     "bezoar": {
         "emoji": "<:bezoar:1415594792217350255>",
         "cost": 30, "kind": "potion_bezoar", "duration": 0,
-        "description": "🪨 Bezoar: removes active potion effects from the target instantly."
+        "description": "Bezoar: removes active potion effects from the target instantly."
     },
 }
 
