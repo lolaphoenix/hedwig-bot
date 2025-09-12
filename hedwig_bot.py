@@ -695,8 +695,8 @@ async def leaderboard(ctx):
 async def shopspells(ctx):
     msg = "🪄 **Spell Shop** 🪄\n\n"
     for name, data in EFFECT_LIBRARY.items():
-    	if name == "polyfail_cat":
-        	continue  # Skip internal helper effect
+        if name == "polyfail_cat":
+            continue  # Skip internal helper effect
         emoji = data.get("emoji", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
