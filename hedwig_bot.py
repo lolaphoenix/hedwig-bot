@@ -93,11 +93,20 @@ spells = {
         "emoji": "<:aguamenti:1415595031644999742>",
     },
     "amortentia": {
-        "emoji": "<:amortentia:1414255673973280909>",  
+        "emoji": "<:amortentia:1414255673973280909>",
         "role_id": 1414255673973280909
     },
     "bezoar": {
         "emoji": "<:bezoar:1415594792217350255>",
+    },
+    "felixfelicis": {
+        "emoji": "<:felixfelicis:1414255673973280908>",
+    },
+    "draughtlivingdeath": {
+        "emoji": "<:draughtlivingdeath:1414255673973280910>",
+    },
+    "polyjuice": {
+        "emoji": "<:polyjuice:1414255673973280911>",
     }
 }
 
@@ -281,7 +290,7 @@ EFFECT_LIBRARY = {
     "confundo": {
         "cost": 25, "kind": "nickname",
         "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ",
-        "suffix": "", "suffix_unicode": "",
+        "suffix": "", "suffix_unicode": "❓",
         "duration": 86400,
         "description": "Prefixes CONFUNDED to the target's nickname for 24 hours."
     },
@@ -730,8 +739,8 @@ async def shopspells(ctx):
         if name == "polyfail_cat":
             continue  # Skip internal helper effect
 
-        # Prefer explicit emoji key, otherwise fallback to prefix or nothing
-        emoji = data.get("emoji") or data.get("prefix_unicode") or data.get("prefix", "")
+        # Always use the custom emoji stored in "prefix"
+        emoji = data.get("prefix", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
 
