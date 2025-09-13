@@ -465,13 +465,15 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
 async def expire_effect(member: discord.Member, uid: str):
     """Remove a single effect by uid and persist changes."""
     if member.id not in active_effects:
-        effects.pop(str(member.id), None)  # <-- Also cleanup from file
+        effects.pop(str(member.id), None)
         save_effects()
         return
+
     expired = next((e for e in active_effects[member.id]["effects"] if e["uid"] == uid), None)
     active_effects[member.id]["effects"] = [
         e for e in active_effects[member.id]["effects"] if e["uid"] != uid
     ]
+
     if active_effects.get(member.id, {}).get("effects"):
         effects[str(member.id)] = active_effects[member.id]
     else:
@@ -486,6 +488,11 @@ async def expire_effect(member: discord.Member, uid: str):
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
+
+        # 🟢 Clear Silencio lock if this was a silence effect
+        if expired.get("kind") == "silence":
+            if member.id in silenced_until:
+                silenced_until.pop(member.id, None)
 
     await update_member_display(member)
 
@@ -525,49 +532,45 @@ async def recompute_nickname(member: discord.Member):
     await set_nickname(member, base)
 
 async def update_member_display(member: discord.Member):
-    """Reapply nickname, roles, and silencing state based on active effects."""
-    await recompute_nickname(member)
+    """Refresh nickname and recalc silence from active effects."""
+    user_effects = active_effects.get(member.id, {}).get("effects", [])
 
-    # Handle role-based effects
-    if member.id in active_effects:
-        for e in active_effects[member.id]["effects"]:
-            kind = e.get("kind")
+    # Collect nickname decorations
+    decorations = []
+    silenced = False
+    for effect in user_effects:
+        deco = effect.get("decoration")
+        if deco:
+            decorations.append(deco)
+        if effect.get("kind") == "silence":
+            silenced = True
 
-            # Lumos role
-            if kind == "role_lumos":
-                role = member.guild.get_role(ROLE_IDS["lumos"])
-                if role:
-                    await safe_add_role(member, role)
+    # 🟢 Reset silence map based on current effects
+    if silenced:
+        # keep them silenced until the latest expiry among silence effects
+        until = max(
+            (e["expires_at"] for e in user_effects if e.get("kind") == "silence"),
+            default=None,
+        )
+        if until:
+            silenced_until[member.id] = until
+    else:
+        silenced_until.pop(member.id, None)
 
-            # Amortentia role
-            if kind == "potion_amortentia":
-                rid = e.get("role_id")
-                role = member.guild.get_role(rid)
-                if role:
-                    await safe_add_role(member, role)
+    # Apply decorated nickname
+    base_nick = member.display_name
+    # strip old decorations if needed
+    for deco in ["🍀", "💀", "💖"]:  # add more if you introduce others
+        if base_nick.endswith(deco):
+            base_nick = base_nick[:-1]
 
-            # Alohomora Room role
-            if kind == "role_alohomora":
-                role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-                if role:
-                    await safe_add_role(member, role)
+    if decorations:
+        base_nick = base_nick.strip() + decorations[-1]  # last applied wins
 
-            # Polyjuice (random house)
-            if kind == "potion_polyjuice":
-                chosen = e.get("meta", {}).get("polyhouse")
-                if chosen and chosen in ROLE_IDS:
-                    role = member.guild.get_role(ROLE_IDS[chosen])
-                    if role:
-                        await safe_add_role(member, role)
-
-            # Silencio (prevent casting)
-            if kind == "silence":
-                exp_str = e.get("expires_at")
-                if exp_str:
-                    try:
-                        silenced_until[member.id] = datetime.fromisoformat(exp_str)
-                    except Exception:
-                        pass
+    try:
+        await member.edit(nick=base_nick)
+    except discord.Forbidden:
+        pass  # bot lacks permission, ignore
 
 
 # -------------------------
