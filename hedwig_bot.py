@@ -266,15 +266,23 @@ def get_user_house(member: discord.Member):
             return name
     return None
 
+# -------------------------
+# LIBRARIES
+# -------------------------
+
 EFFECT_LIBRARY = {
     "aguamenti": {
         "cost": 20, "kind": "nickname",
-        "prefix": "<:aguamenti:1415595031644999742>", "prefix_unicode": "🌊", "suffix": "<:aguamenti:1415595031644999742>", "duration": 86400,
+        "prefix": "<:aguamenti:1415595031644999742>", "prefix_unicode": "🌊",
+        "suffix": "<:aguamenti:1415595031644999742>", "suffix_unicode": "🌊",
+        "duration": 86400,
         "description": "Surrounds the target's nickname with water for 24 hours."
     },
     "confundo": {
         "cost": 25, "kind": "nickname",
-        "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ", "suffix": "", "duration": 86400,
+        "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ",
+        "suffix": "", "suffix_unicode": "",
+        "duration": 86400,
         "description": "Prefixes CONFUNDED to the target's nickname for 24 hours."
     },
     "diffindo": {
@@ -284,27 +292,37 @@ EFFECT_LIBRARY = {
     },
     "ebublio": {
         "cost": 20, "kind": "nickname",
-        "prefix": "<:ebublio:1415595038397693982>", "prefix_unicode": "🫧", "suffix": "<:ebublio:1415595038397693982>", "duration": 86400,
+        "prefix": "<:ebublio:1415595038397693982>", "prefix_unicode": "🫧",
+        "suffix": "<:ebublio:1415595038397693982>", "suffix_unicode": "🫧",
+        "duration": 86400,
         "description": "Surrounds the target's nickname with bubbles for 24 hours."
     },
     "herbifors": {
         "cost": 20, "kind": "nickname",
-        "prefix": "<:herbifors:1415595039882481674>", "prefix_unicode": "🌸", "suffix": "<:herbifors:1415595039882481674>", "duration": 86400,
+        "prefix": "<:herbifors:1415595039882481674>", "prefix_unicode": "🌸",
+        "suffix": "<:herbifors:1415595039882481674>", "suffix_unicode": "🌸",
+        "duration": 86400,
         "description": "Gives the target a floral nickname for 24 hours."
     },
     "serpensortia": {
         "cost": 20, "kind": "nickname",
-        "prefix": "<:serpensortia:1415595048124289075>", "prefix_unicode": "🐍", "suffix": "<:serpensortia:1415595048124289075>", "duration": 86400,
+        "prefix": "<:serpensortia:1415595048124289075>", "prefix_unicode": "🐍",
+        "suffix": "<:serpensortia:1415595048124289075>", "suffix_unicode": "🐍",
+        "duration": 86400,
         "description": "Surrounds the target's nickname with snake emojis for 24 hours."
     },
     "tarantallegra": {
         "cost": 20, "kind": "nickname",
-        "prefix": "<:tarantallegra:1415595049411936296>", "prefix_unicode": "💃", "suffix": "<:tarantallegra:1415595049411936296>", "duration": 86400,
+        "prefix": "<:tarantallegra:1415595049411936296>", "prefix_unicode": "💃",
+        "suffix": "<:tarantallegra:1415595049411936296>", "suffix_unicode": "💃",
+        "duration": 86400,
         "description": "Adds dancing emojis around the target's nickname for 24 hours."
     },
     "incendio": {
         "cost": 25, "kind": "nickname",
-        "prefix": "<:incendio:1415595041191235718>", "prefix_unicode": "🔥", "suffix": "<:incendio:1415595041191235718>", "duration": 86400,
+        "prefix": "<:incendio:1415595041191235718>", "prefix_unicode": "🔥",
+        "suffix": "<:incendio:1415595041191235718>", "suffix_unicode": "🔥",
+        "duration": 86400,
         "description": "Adds flames to the target's nickname for 24 hours."
     },
     "silencio": {
@@ -317,7 +335,9 @@ EFFECT_LIBRARY = {
     },
     "lumos": {
         "cost": 15, "kind": "role_lumos",
-        "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐", "duration": 86400,
+        "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
+        "suffix_unicode": "⭐",
+        "duration": 86400,
         "description": "Gives the Lumos role and a star prefix to the nickname for 24 hours."
     },
     "finite": {
@@ -373,14 +393,15 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     expires_at = datetime.utcnow() + timedelta(hours=24)
     uid = f"{effect_name}_{int(expires_at.timestamp())}"
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name, {})
-    
-    # Get custom emoji for messages from your spells dictionary (if exists)
+
+    # --- custom emoji for chat messages (left as-is so your shop/messages can show server emoji) ---
     emoji_custom = spells.get(effect_name, {}).get("emoji", effect_def.get("prefix", ""))
-    
-    # For nickname prefix, use Unicode from effect_def, or fallback to prefix
-    prefix_unicode = effect_def.get("prefix_unicode", effect_def.get("prefix", ""))
-    
-    # Compose effect entry
+
+    # --- For nicknames, only use explicit unicode fields (do NOT fall back to custom emoji) ---
+    prefix_unicode = effect_def.get("prefix_unicode", "")   # must be a unicode string (e.g. "🌊") or ""
+    suffix_unicode = effect_def.get("suffix_unicode", "")   # optional unicode suffix
+
+    # Compose effect entry stored in memory/file
     entry = {
         "uid": uid,
         "effect": effect_name,
@@ -388,25 +409,32 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "source": source,
         "expires_at": expires_at.isoformat(),
         **effect_def,
-        "prefix_custom": emoji_custom,  # For message/chat uses
-        "prefix_unicode": prefix_unicode,  # For nickname
+        "prefix_custom": emoji_custom,        # for chat/shop display (may contain <:...:id>)
+        "prefix_unicode": prefix_unicode,     # for nickname (unicode only)
+        "suffix_unicode": suffix_unicode,     # for nickname (unicode only)
         "meta": meta or {}
     }
-    
+
+    # grant immediate role if configured
     role_id = entry.get("role_id")
     if role_id:
         role = member.guild.get_role(role_id)
         if role and role not in member.roles:
             await safe_add_role(member, role)
+
+    # attach effect to in-memory state
     if member.id not in active_effects:
         active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
     active_effects[member.id]["effects"].append(entry)
-    
+
+    # persist
     effects[str(member.id)] = {
         "original_nick": active_effects[member.id]["original_nick"],
         "effects": active_effects[member.id]["effects"]
     }
     save_effects()
+
+    # schedule expiry and apply visible changes
     asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
     await update_member_display(member)
 
@@ -456,26 +484,35 @@ async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
     if not data:
         return
+
     base = data.get("original_nick", member.display_name)
+
     for e in data["effects"]:
         kind = e.get("kind")
+
         if kind == "nickname":
-            prefix = e.get("prefix_unicode", "")
-            suffix = e.get("suffix", "")
+            prefix = e.get("prefix_unicode", "") or ""
+            suffix = e.get("suffix_unicode", "") or ""
             base = f"{prefix}{base}{suffix}"
+
         elif kind == "truncate":
             length = e.get("length", 0)
             if length and len(base) > length:
                 base = base[:-length]
+
         elif kind == "role_lumos":
             prefix = e.get("prefix_unicode", "") or ""
-            base = f"{prefix}{base}"
+            if prefix:
+                base = f"{prefix}{base}"
+
         elif kind == "silence":
             base = f"🤫{base}"
+
         elif kind and kind.startswith("potion_"):
             prefix = e.get("prefix_unicode", "") or ""
             if prefix:
                 base = f"{prefix}{base}"
+
     await set_nickname(member, base)
 
 async def update_member_display(member: discord.Member):
@@ -694,7 +731,7 @@ async def shopspells(ctx):
             continue  # Skip internal helper effect
 
         # Prefer explicit emoji key, otherwise fallback to prefix or nothing
-        emoji = data.get("emoji") or data.get("prefix", "")
+        emoji = data.get("emoji") or data.get("prefix_unicode") or data.get("prefix", "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
 
