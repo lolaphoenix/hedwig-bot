@@ -483,6 +483,9 @@ async def expire_effect(member: discord.Member, uid: str):
         if expired.get("kind") == "silence":
             if member.id in silenced_until:
                 silenced_until.pop(member.id, None)
+    # 🚨 Special handling for silence
+    if expired and expired.get("kind") == "silence":
+        silenced_until.pop(member.id, None)
 
     await update_member_display(member)
 
@@ -493,13 +496,16 @@ async def recompute_nickname(member: discord.Member):
 
     base = data.get("original_nick", member.display_name)
 
+    prefixes = []
+    suffixes = []
+    silenced = False
+
     for e in data["effects"]:
         kind = e.get("kind")
 
         if kind == "nickname":
-            prefix = e.get("prefix_unicode", "") or ""
-            suffix = e.get("suffix_unicode", "") or ""
-            base = f"{prefix}{base}{suffix}"
+            prefixes.append(e.get("prefix_unicode", "") or "")
+            suffixes.append(e.get("suffix_unicode", "") or "")
 
         elif kind == "truncate":
             length = e.get("length", 0)
@@ -509,15 +515,22 @@ async def recompute_nickname(member: discord.Member):
         elif kind == "role_lumos":
             prefix = e.get("prefix_unicode", "") or ""
             if prefix:
-                base = f"{prefix}{base}"
+                prefixes.append(prefix)
 
         elif kind == "silence":
-            base = f"🤫{base}"
+            silenced = True
 
         elif kind and kind.startswith("potion_"):
             prefix = e.get("prefix_unicode", "") or ""
             if prefix:
-                base = f"{prefix}{base}"
+                prefixes.append(prefix)
+
+    # Apply all collected decorations
+    base = "".join(prefixes) + base + "".join(suffixes)
+
+    # Apply silence last (so it wraps everything)
+    if silenced:
+        base = f"🤫{base}"
 
     await set_nickname(member, base)
 
@@ -536,15 +549,13 @@ async def update_member_display(member: discord.Member):
             silenced = True
 
     # 🟢 Reset silence map based on current effects
-    if silenced:
-        # keep them silenced until the latest expiry among silence effects
-        until = max(
-            (e["expires_at"] for e in user_effects if e.get("kind") == "silence"),
-            default=None,
-        )
+    silence_effects = [e for e in user_effects if e.get("kind") == "silence"]
+    if silence_effects:
+        until = max((e["expires_at"] for e in silence_effects), default=None)
         if until:
             silenced_until[member.id] = until
     else:
+        # 🚨 important: ensure silence is fully cleared
         silenced_until.pop(member.id, None)
 
     # Apply decorated nickname
