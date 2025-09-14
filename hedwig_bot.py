@@ -389,16 +389,41 @@ EFFECT_LIBRARY["polyfail_cat"] = {
 # -------------------------
 
 async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
-    expires_at = datetime.utcnow() + timedelta(hours=24)
+    # safety: ensure the effect exists in either library
+    effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name)
+    if not effect_def:
+        # defensive: log and exit if the name is wrong
+        print(f"[Hedwig] Tried to apply unknown effect: {effect_name}")
+        return
+
+    expires_at = datetime.utcnow() + timedelta(seconds=effect_def.get("duration", 86400))
     uid = f"{effect_name}_{int(expires_at.timestamp())}"
-    effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name, {})
 
-    # --- custom emoji for chat messages (server emoji or defined override) ---
-    emoji_custom = effect_emojis.get(effect_name, effect_def.get("prefix", ""))
-
-    # --- For nicknames: take prefix/suffix from library, fallback to config unicode ---
-    prefix_unicode = effect_def.get("prefix_unicode", "") or effect_unicode.get(effect_name, "")
+    # --- Get display/custom emoji and unicode for nicknames from the effect definition only ---
+    emoji_custom = effect_def.get("emoji", "")                 # show in shop/messages
+    prefix_unicode = effect_def.get("prefix_unicode", "")      # ONLY used to change nicknames
     suffix_unicode = effect_def.get("suffix_unicode", "")
+
+    # Helper: strip any known unicode decorations from a name so we don't keep stacking them
+    def strip_known_unicode(name: str) -> str:
+        if not name:
+            return name
+        # remove any unicode decorations present in our effect library
+        for v in EFFECT_LIBRARY.values():
+            pu = v.get("prefix_unicode") or ""
+            su = v.get("suffix_unicode") or ""
+            if pu:
+                name = name.replace(pu, "")
+            if su:
+                name = name.replace(su, "")
+        for v in POTION_LIBRARY.values():
+            pu = v.get("prefix_unicode") or ""
+            su = v.get("suffix_unicode") or ""
+            if pu:
+                name = name.replace(pu, "")
+            if su:
+                name = name.replace(su, "")
+        return name.strip()
 
     # Compose effect entry stored in memory/file
     entry = {
@@ -408,9 +433,9 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "source": source,
         "expires_at": expires_at.isoformat(),
         **effect_def,
-        "prefix_custom": emoji_custom,        # for shop/chat messages
-        "prefix_unicode": prefix_unicode,     # unicode prefix for nickname
-        "suffix_unicode": suffix_unicode,     # unicode suffix for nickname
+        "prefix_custom": emoji_custom,       # for chat/shop display (may be <:..:id>)
+        "prefix_unicode": prefix_unicode,    # for nickname (unicode only)
+        "suffix_unicode": suffix_unicode,    # for nickname (unicode only)
         "meta": meta or {}
     }
 
@@ -421,9 +446,11 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         if role and role not in member.roles:
             await safe_add_role(member, role)
 
-    # attach effect to in-memory state
+    # attach effect to in-memory state — but store a CLEAN original_nick (no old decorations)
     if member.id not in active_effects:
-        active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
+        clean_base = strip_known_unicode(member.display_name)
+        active_effects[member.id] = {"original_nick": clean_base, "effects": []}
+
     active_effects[member.id]["effects"].append(entry)
 
     # persist
@@ -493,48 +520,33 @@ async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
     if not data:
         return
-
     base = data.get("original_nick", member.display_name)
 
-    prefixes = []
-    suffixes = []
-    silenced = False
-
+    # Apply effects in order (stacking if multiple nickname effects exist)
     for e in data["effects"]:
         kind = e.get("kind")
-
         if kind == "nickname":
-            prefixes.append(e.get("prefix_unicode", "") or "")
-            suffixes.append(e.get("suffix_unicode", "") or "")
-
+            prefix = e.get("prefix_unicode", "") or ""
+            suffix = e.get("suffix_unicode", "") or ""
+            base = f"{prefix}{base}{suffix}"
         elif kind == "truncate":
             length = e.get("length", 0)
             if length and len(base) > length:
                 base = base[:-length]
-
         elif kind == "role_lumos":
             prefix = e.get("prefix_unicode", "") or ""
             if prefix:
-                prefixes.append(prefix)
-
+                base = f"{prefix}{base}"
         elif kind == "silence":
-            silenced = True
-
+            base = f"🤫{base}"
         elif kind and kind.startswith("potion_"):
             prefix = e.get("prefix_unicode", "") or ""
             if prefix:
-                prefixes.append(prefix)
-
-    # Apply all collected decorations
-    base = "".join(prefixes) + base + "".join(suffixes)
-
-    # Apply silence last (so it wraps everything)
-    if silenced:
-        base = f"🤫{base}"
+                base = f"{prefix}{base}"
 
     await set_nickname(member, base)
 
-async def update_member_display(member: discord.Member):
+async def update_member_display(member: discord.Member):sho
     """Refresh nickname, roles and silencing from active effects."""
     # Recompute nickname using prefix_unicode/suffix_unicode (handles stacking)
     await recompute_nickname(member)
@@ -759,32 +771,24 @@ async def shopspells(ctx):
     msg = "🪄 **Spell Shop** 🪄\n\n"
     for name, data in EFFECT_LIBRARY.items():
         if name == "polyfail_cat":
-            continue  # Skip internal helper effect
-
-        emoji = effect_emojis.get(name, data.get("emoji", "")) or effect_unicode.get(name, "")
+            continue
+        emoji = data.get("emoji") or data.get("prefix_unicode") or ""
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-
         msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
-
     msg += "Use `!cast <spell> @user` to buy and cast spells!\n"
     await ctx.send(msg)
 
 @bot.command()
 async def shoppotions(ctx):
-    """Show available potions in the shop."""
     msg = "🍷 **Potion Shop** 🍷\n\n"
     for name, data in POTION_LIBRARY.items():
-        if name == "polyfail_cat":  # skip helper entry
+        if name == "polyfail_cat":
             continue
-
-        # ✅ Prefer config-defined emoji, then library, then unicode fallback
-        emoji = effect_emojis.get(name, data.get("emoji", "")) or effect_unicode.get(name, "")
+        emoji = data.get("emoji") or data.get("prefix_unicode") or ""
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-
         msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
-
     msg += "Use `!drink <potion> [@user]` to buy and drink potions.\n"
     await ctx.send(msg)
 
