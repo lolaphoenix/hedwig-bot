@@ -72,10 +72,10 @@ effect_emojis = {
     "aguamenti": "<:aguamenti:1415595031644999742>",
     "amortentia": "<:amortentia:1414255673973280909>",
     "bezoar": "<:bezoar:1415594792217350255>",
-    "felixfelicis": "<:felixfelicis:1414255673973280908>",
-    "draughtlivingdeath": "<:draughtlivingdeath:1414255673973280910>",
-    "amortentia": "<:amortentia:1414255673973280909>",
-    "polyjuice": "<:polyjuice:1414255673973280911>",
+    "felixfelicis": "<:felixfelicis:1413679761036673186>",
+    "draughtlivingdeath": "<:draughtoflivingdeath:1413679622041894985>",
+    "amortentia": "<:amortentia:1413679525178380369>",
+    "polyjuice": "<:polyjuice:1413679815520944158>",
     "finite": "✂️"
 }
 
@@ -347,22 +347,22 @@ EFFECT_LIBRARY = {
 
 POTION_LIBRARY = {
     "felixfelicis": {
-        "emoji": "<:felixfelicis:1414255673973280908>",
+        "emoji": "<:felixfelicis:1413679761036673186>",
         "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis:1414255673973280908>", "prefix_unicode": "🍀", "duration": 86400,
         "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
     },
     "draughtlivingdeath": {
-        "emoji": "<:draughtlivingdeath:1414255673973280910>", 
+        "emoji": "<:draughtoflivingdeath:1413679622041894985>", 
         "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath:1414255673973280910>", "prefix_unicode": "💀", "duration": 86400,
         "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
     },
     "amortentia": {
-        "emoji": "<:amortentia:1414255673973280909>",
+        "emoji": "<:amortentia:1413679525178380369>",
         "cost": 70, "kind": "potion_amortentia", "prefix": "<:amortentia:1414255673973280909>", "prefix_unicode": "💖", "role_id": ROLE_IDS["amortentia"], "duration": 86400,
         "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname for 24 hours."
     },
     "polyjuice": {
-        "emoji": "<:polyjuice:1414255673973280911>",
+        "emoji": "<:polyjuice:1413679815520944158>",
         "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
         "description": "Polyjuice Potion: randomly grants access to a random house common-room role for 24 hours (or backfires)."
     },
