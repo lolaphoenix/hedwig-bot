@@ -75,7 +75,7 @@ effect_emojis = {
     "felixfelicis": "<:felixfelicis:1414255673973280908>",
     "draughtlivingdeath": "<:draughtlivingdeath:1414255673973280910>",
     "amortentia": "<:amortentia:1414255673973280909>",
-    "polyjuice": "<:polyjuice:1414255673973280911>"
+    "polyjuice": "<:polyjuice:1414255673973280911>",
     "finite": "✂️"
 }
 
@@ -97,7 +97,7 @@ effect_unicode = {
     "felixfelicis": "🍀",
     "draughtlivingdeath": "💀",
     "amortentia": "💖",
-    "polyjuice": "🧪"
+    "polyjuice": "🧪",
     "finite": "✂️"
 }
 
