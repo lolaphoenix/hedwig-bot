@@ -735,10 +735,13 @@ async def shopspells(ctx):
 
 @bot.command()
 async def shoppotions(ctx):
+    """Show available potions in the shop."""
     msg = "🍷 **Potion Shop** 🍷\n\n"
     for name, data in POTION_LIBRARY.items():
         if name == "polyfail_cat":  # skip helper entry
             continue
+
+        # ✅ Prefer config-defined emoji, then library, then unicode fallback
         emoji = effect_emojis.get(name, data.get("emoji", "")) or effect_unicode.get(name, "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
@@ -747,6 +750,7 @@ async def shoppotions(ctx):
 
     msg += "Use `!drink <potion> [@user]` to buy and drink potions.\n"
     await ctx.send(msg)
+
 
 # -------------------------
 # COMMAND: CAST (spells)
