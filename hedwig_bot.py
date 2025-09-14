@@ -535,23 +535,53 @@ async def recompute_nickname(member: discord.Member):
     await set_nickname(member, base)
 
 async def update_member_display(member: discord.Member):
-    """Refresh nickname and recalc silence from active effects."""
-    user_effects = active_effects.get(member.id, {}).get("effects", [])
-
-    # 🟢 Reset silence map based on current effects
-    silence_effects = [e for e in user_effects if e.get("kind") == "silence"]
-    if silence_effects:
-        # keep them silenced until the latest expiry among silence effects
-        until = max((e["expires_at"] for e in silence_effects), default=None)
-        if until:
-            silenced_until[member.id] = until
-    else:
-        # 🚨 make sure silence state is fully cleared if no silence effects remain
-        silenced_until.pop(member.id, None)
-
-    # ✅ Let recompute_nickname handle nickname decorations (prefixes/suffixes)
+    """Reapply nickname, roles, and silencing state based on active effects."""
+    # Always recompute nickname properly
     await recompute_nickname(member)
 
+    # Handle role-based effects
+    if member.id in active_effects:
+        for e in active_effects[member.id]["effects"]:
+            kind = e.get("kind")
+
+            # Lumos role
+            if kind == "role_lumos":
+                role = member.guild.get_role(ROLE_IDS["lumos"])
+                if role:
+                    await safe_add_role(member, role)
+
+            # Amortentia role
+            if kind == "potion_amortentia":
+                rid = e.get("role_id")
+                role = member.guild.get_role(rid)
+                if role:
+                    await safe_add_role(member, role)
+
+            # Alohomora Room role
+            if kind == "role_alohomora":
+                role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+                if role:
+                    await safe_add_role(member, role)
+
+            # Polyjuice (random house)
+            if kind == "potion_polyjuice":
+                chosen = e.get("meta", {}).get("polyhouse")
+                if chosen and chosen in ROLE_IDS:
+                    role = member.guild.get_role(ROLE_IDS[chosen])
+                    if role:
+                        await safe_add_role(member, role)
+
+            # Silencio (prevent casting)
+            if kind == "silence":
+                exp_str = e.get("expires_at")
+                if exp_str:
+                    try:
+                        silenced_until[member.id] = datetime.fromisoformat(exp_str)
+                    except Exception:
+                        pass
+    else:
+        # If no active effects, make sure to clear silence
+        silenced_until.pop(member.id, None)
 
 # -------------------------
 # ROOM / ALOHOMORA GAME HELPERS
