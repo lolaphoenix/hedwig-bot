@@ -57,59 +57,41 @@ house_emojis = {
     "hufflepuff": "<:hufflepuff:1398846494844387379>",
 }
 
-spells = {
-    "tarantallegra": {
-        "emoji": "<:tarantallegra:1415595049411936296>",
-    },
-    "serpensortia": {
-        "emoji": "<:serpensortia:1415595048124289075>",
-    },
-    "silencio": {
-        "emoji": "<:silencio:1415595046367002624>",
-    },
-    "lumos": {
-        "emoji": "<:lumos:1415595044357931100>",
-        "role_id": 1413122717682761788
-    },
-    "incendio": {
-        "emoji": "<:incendio:1415595041191235718>",
-    },
-    "herbifors": {
-        "emoji": "<:herbifors:1415595039882481674>",
-    },
-    "ebublio": {
-        "emoji": "<:ebublio:1415595038397693982>",
-    },
-    "diffindo": {
-        "emoji": "<:diffindo:1415595036250214500>",
-    },
-    "confundo": {
-        "emoji": "<:confundo:1415595034769625199>",
-    },
-    "alohomora": {
-        "emoji": "<:alohomora:1415595033410666629>",
-    },
-    "aguamenti": {
-        "emoji": "<:aguamenti:1415595031644999742>",
-    },
-    "amortentia": {
-        "emoji": "<:amortentia:1414255673973280909>",
-        "role_id": 1414255673973280909
-    },
-    "bezoar": {
-        "emoji": "<:bezoar:1415594792217350255>",
-    },
-    "felixfelicis": {
-        "emoji": "<:felixfelicis:1414255673973280908>",
-    },
-    "draughtlivingdeath": {
-        "emoji": "<:draughtlivingdeath:1414255673973280910>",
-    },
-    "polyjuice": {
-        "emoji": "<:polyjuice:1414255673973280911>",
-    }
+# Custom effect emoji mappings
+effect_emojis = {
+    "tarantallegra": "<:tarantallegra:1415595049411936296>",
+    "serpensortia": "<:serpensortia:1415595048124289075>",
+    "silencio": "<:silencio:1415595046367002624>",
+    "lumos": "<:lumos:1415595044357931100>",
+    "incendio": "<:incendio:1415595041191235718>",
+    "herbifors": "<:herbifors:1415595039882481674>",
+    "ebublio": "<:ebublio:1415595038397693982>",
+    "diffindo": "<:diffindo:1415595036250214500>",
+    "confundo": "<:confundo:1415595034769625199>",
+    "alohomora": "<:alohomora:1415595033410666629>",
+    "aguamenti": "<:aguamenti:1415595031644999742>",
+    "amortentia": "<:amortentia:1414255673973280909>",
+    "bezoar": "<:bezoar:1415594792217350255>",
+    "finite": "✂️"
 }
 
+# Optional unicode versions (for nicknames, etc.)
+effect_unicode = {
+    "tarantallegra": "💃",
+    "serpensortia": "🐍",
+    "silencio": "🤫",
+    "lumos": "✨",
+    "incendio": "🔥",
+    "herbifors": "🌿",
+    "ebublio": "🫧",
+    "diffindo": "✂️",
+    "confundo": "🌀",
+    "alohomora": "🗝️",
+    "aguamenti": "💧",
+    "amortentia": "💖",
+    "bezoar": "💊",
+    "finite": "✂️"
+}
 
 # -------------------------
 # PERSISTENCE: data files
@@ -404,11 +386,11 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name, {})
 
     # --- custom emoji for chat messages (left as-is so your shop/messages can show server emoji) ---
-    emoji_custom = spells.get(effect_name, {}).get("emoji", effect_def.get("prefix", ""))
+    emoji_custom = effect_emojis.get(effect_name, effect_def.get("prefix", ""))
 
     # --- For nicknames, only use explicit unicode fields (do NOT fall back to custom emoji) ---
-    prefix_unicode = effect_def.get("prefix_unicode", "")   # must be a unicode string (e.g. "🌊") or ""
-    suffix_unicode = effect_def.get("suffix_unicode", "")   # optional unicode suffix
+    prefix_unicode = effect_unicode.get(effect_name, effect_def.get("prefix_unicode", ""))
+    suffix_unicode = effect_unicode.get(effect_name, effect_def.get("suffix_unicode", ""))
 
     # Compose effect entry stored in memory/file
     entry = {
@@ -742,8 +724,7 @@ async def shopspells(ctx):
         if name == "polyfail_cat":
             continue  # Skip internal helper effect
 
-        # Always use the custom emoji stored in "prefix"
-        emoji = data.get("prefix", "")
+        emoji = effect_emojis.get(name, data.get("emoji", "")) or effect_unicode.get(name, "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
 
@@ -754,14 +735,14 @@ async def shopspells(ctx):
 
 @bot.command()
 async def shoppotions(ctx):
-    """Show available potions in the shop."""
     msg = "🍷 **Potion Shop** 🍷\n\n"
     for name, data in POTION_LIBRARY.items():
         if name == "polyfail_cat":  # skip helper entry
             continue
-        emoji = data.get("emoji", "")
+        emoji = effect_emojis.get(name, data.get("emoji", "")) or effect_unicode.get(name, "")
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
+
         msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
 
     msg += "Use `!drink <potion> [@user]` to buy and drink potions.\n"
