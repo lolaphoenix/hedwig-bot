@@ -947,6 +947,29 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
         return await ctx.send(f"✨ Removed the most recent effect from {member.display_name}.")
 
 # -------------------------
+# CLEAR EFFECTS COMMAND
+# -------------------------
+
+@bot.command()
+async def cleareffects(ctx, member: discord.Member = None):
+    """Admin: clear all active effects for a user (or everyone if none)."""
+    if not is_staff_allowed(ctx.author):
+        return await ctx.send("❌ You don’t have permission to use this.")
+
+    if member:
+        active_effects.pop(member.id, None)
+        effects.pop(str(member.id), None)
+        save_effects()
+        await update_member_display(member)
+        await ctx.send(f"🧹 Cleared all active effects for {member.display_name}.")
+    else:
+        active_effects.clear()
+        effects.clear()
+        save_effects()
+        await ctx.send("🧹 Cleared ALL active effects for everyone.")
+
+
+# -------------------------
 # STARTUP / RUN
 # -------------------------
 @bot.event
