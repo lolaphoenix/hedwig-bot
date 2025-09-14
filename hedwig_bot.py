@@ -538,40 +538,19 @@ async def update_member_display(member: discord.Member):
     """Refresh nickname and recalc silence from active effects."""
     user_effects = active_effects.get(member.id, {}).get("effects", [])
 
-    # Collect nickname decorations
-    decorations = []
-    silenced = False
-    for effect in user_effects:
-        deco = effect.get("decoration")
-        if deco:
-            decorations.append(deco)
-        if effect.get("kind") == "silence":
-            silenced = True
-
     # 🟢 Reset silence map based on current effects
     silence_effects = [e for e in user_effects if e.get("kind") == "silence"]
     if silence_effects:
+        # keep them silenced until the latest expiry among silence effects
         until = max((e["expires_at"] for e in silence_effects), default=None)
         if until:
             silenced_until[member.id] = until
     else:
-        # 🚨 important: ensure silence is fully cleared
+        # 🚨 make sure silence state is fully cleared if no silence effects remain
         silenced_until.pop(member.id, None)
 
-    # Apply decorated nickname
-    base_nick = member.display_name
-    # strip old decorations if needed
-    for deco in ["🍀", "💀", "💖"]:  # add more if you introduce others
-        if base_nick.endswith(deco):
-            base_nick = base_nick[:-1]
-
-    if decorations:
-        base_nick = base_nick.strip() + decorations[-1]  # last applied wins
-
-    try:
-        await member.edit(nick=base_nick)
-    except discord.Forbidden:
-        pass  # bot lacks permission, ignore
+    # ✅ Let recompute_nickname handle nickname decorations (prefixes/suffixes)
+    await recompute_nickname(member)
 
 
 # -------------------------
