@@ -393,12 +393,12 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     uid = f"{effect_name}_{int(expires_at.timestamp())}"
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name, {})
 
-    # --- custom emoji for chat messages (left as-is so your shop/messages can show server emoji) ---
+    # --- custom emoji for chat messages (server emoji or defined override) ---
     emoji_custom = effect_emojis.get(effect_name, effect_def.get("prefix", ""))
 
-    # --- For nicknames, only use explicit unicode fields (do NOT fall back to custom emoji) ---
-    prefix_unicode = effect_unicode.get(effect_name, effect_def.get("prefix_unicode", ""))
-    suffix_unicode = effect_unicode.get(effect_name, effect_def.get("suffix_unicode", ""))
+    # --- For nicknames: take prefix/suffix from library, fallback to config unicode ---
+    prefix_unicode = effect_def.get("prefix_unicode", "") or effect_unicode.get(effect_name, "")
+    suffix_unicode = effect_def.get("suffix_unicode", "")
 
     # Compose effect entry stored in memory/file
     entry = {
@@ -408,9 +408,9 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "source": source,
         "expires_at": expires_at.isoformat(),
         **effect_def,
-        "prefix_custom": emoji_custom,        # for chat/shop display (may contain <:...:id>)
-        "prefix_unicode": prefix_unicode,     # for nickname (unicode only)
-        "suffix_unicode": suffix_unicode,     # for nickname (unicode only)
+        "prefix_custom": emoji_custom,        # for shop/chat messages
+        "prefix_unicode": prefix_unicode,     # unicode prefix for nickname
+        "suffix_unicode": suffix_unicode,     # unicode suffix for nickname
         "meta": meta or {}
     }
 
