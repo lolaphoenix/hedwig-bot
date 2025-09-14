@@ -535,52 +535,61 @@ async def recompute_nickname(member: discord.Member):
     await set_nickname(member, base)
 
 async def update_member_display(member: discord.Member):
-    """Reapply nickname, roles, and silencing state based on active effects."""
-    # Always recompute nickname properly
+    """Refresh nickname, roles and silencing from active effects."""
+    # Recompute nickname using prefix_unicode/suffix_unicode (handles stacking)
     await recompute_nickname(member)
 
-    # Handle role-based effects
-    if member.id in active_effects:
-        for e in active_effects[member.id]["effects"]:
-            kind = e.get("kind")
+    user_effects = active_effects.get(member.id, {}).get("effects", [])
 
-            # Lumos role
-            if kind == "role_lumos":
-                role = member.guild.get_role(ROLE_IDS["lumos"])
+    # Re-apply role-based effects (Lum os, Amortentia, Alohomora, Polyjuice)
+    for e in user_effects:
+        kind = e.get("kind")
+
+        if kind == "role_lumos":
+            role = member.guild.get_role(ROLE_IDS["lumos"])
+            if role:
+                await safe_add_role(member, role)
+
+        if kind == "potion_amortentia":
+            rid = e.get("role_id")
+            role = member.guild.get_role(rid)
+            if role:
+                await safe_add_role(member, role)
+
+        if kind == "role_alohomora":
+            role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+            if role:
+                await safe_add_role(member, role)
+
+        if kind == "potion_polyjuice":
+            chosen = e.get("meta", {}).get("polyhouse")
+            if chosen and chosen in ROLE_IDS:
+                role = member.guild.get_role(ROLE_IDS[chosen])
                 if role:
                     await safe_add_role(member, role)
 
-            # Amortentia role
-            if kind == "potion_amortentia":
-                rid = e.get("role_id")
-                role = member.guild.get_role(rid)
-                if role:
-                    await safe_add_role(member, role)
+    # Recompute silenced_until as a datetime (if there are any active silence effects)
+    silence_expiries = []
+    for e in user_effects:
+        if e.get("kind") == "silence":
+            exp = e.get("expires_at")
+            if not exp:
+                continue
+            # expiry can be stored as ISO string -> parse it
+            if isinstance(exp, str):
+                try:
+                    exp_dt = datetime.fromisoformat(exp)
+                except Exception:
+                    continue
+            elif isinstance(exp, datetime):
+                exp_dt = exp
+            else:
+                continue
+            silence_expiries.append(exp_dt)
 
-            # Alohomora Room role
-            if kind == "role_alohomora":
-                role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-                if role:
-                    await safe_add_role(member, role)
-
-            # Polyjuice (random house)
-            if kind == "potion_polyjuice":
-                chosen = e.get("meta", {}).get("polyhouse")
-                if chosen and chosen in ROLE_IDS:
-                    role = member.guild.get_role(ROLE_IDS[chosen])
-                    if role:
-                        await safe_add_role(member, role)
-
-            # Silencio (prevent casting)
-            if kind == "silence":
-                exp_str = e.get("expires_at")
-                if exp_str:
-                    try:
-                        silenced_until[member.id] = datetime.fromisoformat(exp_str)
-                    except Exception:
-                        pass
+    if silence_expiries:
+        silenced_until[member.id] = max(silence_expiries)
     else:
-        # If no active effects, make sure to clear silence
         silenced_until.pop(member.id, None)
 
 # -------------------------
@@ -813,23 +822,26 @@ async def cast(ctx, spell: str, member: discord.Member):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
 
-    # finite spell purchased: remove the most recent effect immediately
+       # finite spell purchased: remove a silence effect if present, otherwise remove most recent
     if spell == "finite":
         remove_galleons_local(caster.id, cost)
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
             return await ctx.send("❌ That user has no active spells/potions to finite.")
-        last_entry = active_effects[member.id]["effects"][-1]
-        await expire_effect(member, last_entry["uid"])
-        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_entry['effect']}**.")
 
-    # Diffindo special: if target's display name is 5 chars or less, spell fails and costs nothing
-    if spell == "diffindo":
-        if len(member.display_name) <= 5:
-            return await ctx.send("Your spell bounces off the wall and misses its target. No galleons have been spent. Try another target.")
+        effects_list = active_effects[member.id]["effects"]
 
-    remove_galleons_local(caster.id, cost)
-    await apply_effect_to_member(member, spell, source="spell")
-    await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+        # Find the most recent silence effect (search from end backwards)
+        silence_idx = next((i for i in range(len(effects_list)-1, -1, -1)
+                            if effects_list[i].get("kind") == "silence"), None)
+
+        if silence_idx is not None:
+            idx_to_remove = silence_idx
+        else:
+            idx_to_remove = len(effects_list) - 1
+
+        entry = effects_list[idx_to_remove]
+        await expire_effect(member, entry["uid"])
+        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{entry['effect']}**.")
 
     if spell == "alohomora":
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
