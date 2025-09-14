@@ -72,6 +72,10 @@ effect_emojis = {
     "aguamenti": "<:aguamenti:1415595031644999742>",
     "amortentia": "<:amortentia:1414255673973280909>",
     "bezoar": "<:bezoar:1415594792217350255>",
+    "felixfelicis": "<:felixfelicis:1414255673973280908>",
+    "draughtlivingdeath": "<:draughtlivingdeath:1414255673973280910>",
+    "amortentia": "<:amortentia:1414255673973280909>",
+    "polyjuice": "<:polyjuice:1414255673973280911>"
     "finite": "✂️"
 }
 
@@ -90,6 +94,10 @@ effect_unicode = {
     "aguamenti": "💧",
     "amortentia": "💖",
     "bezoar": "💊",
+    "felixfelicis": "🍀",
+    "draughtlivingdeath": "💀",
+    "amortentia": "💖",
+    "polyjuice": "🧪"
     "finite": "✂️"
 }
 
