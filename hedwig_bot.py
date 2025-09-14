@@ -546,14 +546,15 @@ async def recompute_nickname(member: discord.Member):
 
     await set_nickname(member, base)
 
-async def update_member_display(member: discord.Member):sho
-    """Refresh nickname, roles and silencing from active effects."""
-    # Recompute nickname using prefix_unicode/suffix_unicode (handles stacking)
+async def update_member_display(member: discord.Member):
+    """Refresh nickname, roles, and silencing from active effects."""
+
+    # Always recompute nickname first (handles stacking correctly)
     await recompute_nickname(member)
 
     user_effects = active_effects.get(member.id, {}).get("effects", [])
 
-    # Re-apply role-based effects (Lum os, Amortentia, Alohomora, Polyjuice)
+    # --- Roles ---
     for e in user_effects:
         kind = e.get("kind")
 
@@ -562,32 +563,31 @@ async def update_member_display(member: discord.Member):sho
             if role:
                 await safe_add_role(member, role)
 
-        if kind == "potion_amortentia":
+        elif kind == "potion_amortentia":
             rid = e.get("role_id")
             role = member.guild.get_role(rid)
             if role:
                 await safe_add_role(member, role)
 
-        if kind == "role_alohomora":
+        elif kind == "role_alohomora":
             role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
             if role:
                 await safe_add_role(member, role)
 
-        if kind == "potion_polyjuice":
+        elif kind == "potion_polyjuice":
             chosen = e.get("meta", {}).get("polyhouse")
             if chosen and chosen in ROLE_IDS:
                 role = member.guild.get_role(ROLE_IDS[chosen])
                 if role:
                     await safe_add_role(member, role)
 
-    # Recompute silenced_until as a datetime (if there are any active silence effects)
+    # --- Silence handling ---
     silence_expiries = []
     for e in user_effects:
         if e.get("kind") == "silence":
             exp = e.get("expires_at")
             if not exp:
                 continue
-            # expiry can be stored as ISO string -> parse it
             if isinstance(exp, str):
                 try:
                     exp_dt = datetime.fromisoformat(exp)
