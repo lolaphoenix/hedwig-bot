@@ -61,7 +61,6 @@ house_emojis = {
 effect_emojis = {
     "tarantallegra": "<:tarantallegra:1415595049411936296>",
     "serpensortia": "<:serpensortia:1415595048124289075>",
-    "silencio": "<:silencio:1415595046367002624>",
     "lumos": "<:lumos:1415595044357931100>",
     "incendio": "<:incendio:1415595041191235718>",
     "herbifors": "<:herbifors:1415595039882481674>",
@@ -83,7 +82,6 @@ effect_emojis = {
 effect_unicode = {
     "tarantallegra": "💃",
     "serpensortia": "🐍",
-    "silencio": "🤫",
     "lumos": "✨",
     "incendio": "🔥",
     "herbifors": "🌿",
@@ -198,8 +196,6 @@ active_effects = {}       # user_id -> {"original_nick": str, "effects": [ ... ]
 active_potions = {}       # user_id -> {"winning": int, "chosen": bool, "started_by": id}
 
 alohomora_cooldowns = {}    # target_user_id -> datetime
-silencio_last = {}          # target_user_id -> datetime
-silenced_until = {}         # user_id -> datetime
 
 # -------------------------
 # HELPERS
@@ -217,6 +213,20 @@ def get_member_from_id(user_id: int):
         if m:
             return m
     return None
+
+def strip_known_unicode(name: str) -> str:
+    """Remove any unicode decorations we use for effects."""
+    if not name:
+        return name
+    for v in EFFECT_LIBRARY.values():
+        for k in ("prefix_unicode", "suffix_unicode"):
+            if v.get(k):
+                name = name.replace(v[k], "")
+    for v in POTION_LIBRARY.values():
+        for k in ("prefix_unicode", "suffix_unicode"):
+            if v.get(k):
+                name = name.replace(v[k], "")
+    return name.strip()
 
 async def safe_add_role(member: discord.Member, role: discord.Role):
     try:
@@ -274,59 +284,48 @@ EFFECT_LIBRARY = {
         "cost": 20, "kind": "nickname",
         "prefix": "<:aguamenti:1415595031644999742>", "prefix_unicode": "🌊",
         "suffix": "<:aguamenti:1415595031644999742>", "suffix_unicode": "🌊",
-        "duration": 86400,
-        "description": "Surrounds the target's nickname with water for 24 hours."
+        "description": "Surrounds the target's nickname with water."
     },
     "confundo": {
         "cost": 25, "kind": "nickname",
         "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ",
         "suffix": "", "suffix_unicode": "❓",
-        "duration": 86400,
-        "description": "Prefixes CONFUNDED to the target's nickname for 24 hours."
+        "description": "Prefixes CONFUNDED to the target's nickname."
     },
     "diffindo": {
         "cost": 30, "kind": "truncate",
-        "length": 5, "duration": 86400,
-        "description": "Removes the last 5 characters of the target's nickname for 24 hours."
+        "length": 5,
+        "description": "Removes the last 5 characters of the target's nickname."
     },
     "ebublio": {
         "cost": 20, "kind": "nickname",
         "prefix": "<:ebublio:1415595038397693982>", "prefix_unicode": "🫧",
         "suffix": "<:ebublio:1415595038397693982>", "suffix_unicode": "🫧",
-        "duration": 86400,
-        "description": "Surrounds the target's nickname with bubbles for 24 hours."
+        "description": "Surrounds the target's nickname with bubbles."
     },
     "herbifors": {
         "cost": 20, "kind": "nickname",
         "prefix": "<:herbifors:1415595039882481674>", "prefix_unicode": "🌸",
         "suffix": "<:herbifors:1415595039882481674>", "suffix_unicode": "🌸",
-        "duration": 86400,
-        "description": "Gives the target a floral nickname for 24 hours."
+        "description": "Gives the target a floral nickname."
     },
     "serpensortia": {
         "cost": 20, "kind": "nickname",
         "prefix": "<:serpensortia:1415595048124289075>", "prefix_unicode": "🐍",
         "suffix": "<:serpensortia:1415595048124289075>", "suffix_unicode": "🐍",
-        "duration": 86400,
-        "description": "Surrounds the target's nickname with snake emojis for 24 hours."
+        "description": "Surrounds the target's nickname with snake emojis."
     },
     "tarantallegra": {
         "cost": 20, "kind": "nickname",
         "prefix": "<:tarantallegra:1415595049411936296>", "prefix_unicode": "💃",
         "suffix": "<:tarantallegra:1415595049411936296>", "suffix_unicode": "💃",
-        "duration": 86400,
-        "description": "Adds dancing emojis around the target's nickname for 24 hours."
+        "description": "Adds dancing emojis around the target's nickname."
     },
     "incendio": {
         "cost": 25, "kind": "nickname",
         "prefix": "<:incendio:1415595041191235718>", "prefix_unicode": "🔥",
         "suffix": "<:incendio:1415595041191235718>", "suffix_unicode": "🔥",
-        "duration": 86400,
-        "description": "Adds flames to the target's nickname for 24 hours."
-    },
-    "silencio": {
-        "cost": 40, "kind": "silence", "duration": 86400, "weekly_limit_days": 7,
-        "description": "Silences the target from casting spells for 24 hours (one use per week)."
+        "description": "Adds flames to the target's nickname."
     },
     "alohomora": {
         "cost": 50, "kind": "role_alohomora", "duration": 86400,
@@ -336,8 +335,7 @@ EFFECT_LIBRARY = {
         "cost": 15, "kind": "role_lumos",
         "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
         "suffix_unicode": "⭐",
-        "duration": 86400,
-        "description": "Gives the Lumos role and a star prefix to the nickname for 24 hours."
+        "description": "Gives the Lumos role and a star prefix to the nickname."
     },
     "finite": {
         "cost": 10, "kind": "finite", "duration": 0,
@@ -348,27 +346,27 @@ EFFECT_LIBRARY = {
 POTION_LIBRARY = {
     "felixfelicis": {
         "emoji": "<:felixfelicis:1413679761036673186>",
-        "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis:1414255673973280908>", "prefix_unicode": "🍀", "duration": 86400,
-        "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname for 24 hours."
+        "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis:1414255673973280908>", "prefix_unicode": "🍀",
+        "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname."
     },
     "draughtlivingdeath": {
         "emoji": "<:draughtoflivingdeath:1413679622041894985>", 
-        "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath:1414255673973280910>", "prefix_unicode": "💀", "duration": 86400,
-        "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname for 24 hours."
+        "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath:1414255673973280910>", "prefix_unicode": "💀",
+        "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname."
     },
     "amortentia": {
         "emoji": "<:amortentia:1413679525178380369>",
-        "cost": 70, "kind": "potion_amortentia", "prefix": "<:amortentia:1414255673973280909>", "prefix_unicode": "💖", "role_id": ROLE_IDS["amortentia"], "duration": 86400,
-        "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname for 24 hours."
+        "cost": 70, "kind": "potion_amortentia", "prefix": "<:amortentia:1414255673973280909>", "prefix_unicode": "💖", "role_id": ROLE_IDS["amortentia"],
+        "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname."
     },
     "polyjuice": {
         "emoji": "<:polyjuice:1413679815520944158>",
         "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
-        "description": "Polyjuice Potion: randomly grants access to a random house common-room role for 24 hours (or backfires)."
+        "description": "Polyjuice Potion: randomly grants access to a house common-room role for 24 hours (or backfires)."
     },
     "bezoar": {
         "emoji": "<:bezoar:1415594792217350255>",
-        "cost": 30, "kind": "potion_bezoar", "duration": 0,
+        "cost": 30, "kind": "potion_bezoar",
         "description": "Bezoar: removes active potion effects from the target instantly."
     },
 }
@@ -392,77 +390,62 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     # safety: ensure the effect exists in either library
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name)
     if not effect_def:
-        # defensive: log and exit if the name is wrong
         print(f"[Hedwig] Tried to apply unknown effect: {effect_name}")
         return
 
-    expires_at = datetime.utcnow() + timedelta(seconds=effect_def.get("duration", 86400))
-    uid = f"{effect_name}_{int(expires_at.timestamp())}"
+    # Only Polyjuice & Alohomora have durations
+    duration = effect_def.get("duration", 0)
+    expires_at = None
+    if duration and duration > 0:
+        expires_at = datetime.utcnow() + timedelta(seconds=duration)
 
-    # --- Get display/custom emoji and unicode for nicknames from the effect definition only ---
-    emoji_custom = effect_def.get("emoji", "")                 # show in shop/messages
-    prefix_unicode = effect_def.get("prefix_unicode", "")      # ONLY used to change nicknames
+    uid = f"{effect_name}_{int(time.time())}"
+
+    emoji_custom = effect_def.get("emoji", "")
+    prefix_unicode = effect_def.get("prefix_unicode", "")
     suffix_unicode = effect_def.get("suffix_unicode", "")
 
-    # Helper: strip any known unicode decorations from a name so we don't keep stacking them
-    def strip_known_unicode(name: str) -> str:
-        if not name:
-            return name
-        # remove any unicode decorations present in our effect library
-        for v in EFFECT_LIBRARY.values():
-            pu = v.get("prefix_unicode") or ""
-            su = v.get("suffix_unicode") or ""
-            if pu:
-                name = name.replace(pu, "")
-            if su:
-                name = name.replace(su, "")
-        for v in POTION_LIBRARY.values():
-            pu = v.get("prefix_unicode") or ""
-            su = v.get("suffix_unicode") or ""
-            if pu:
-                name = name.replace(pu, "")
-            if su:
-                name = name.replace(su, "")
-        return name.strip()
+    # Store clean nickname base once
+    if member.id not in active_effects:
+        active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
-    # Compose effect entry stored in memory/file
     entry = {
         "uid": uid,
         "effect": effect_name,
         "name": effect_name,
         "source": source,
-        "expires_at": expires_at.isoformat(),
+        "expires_at": expires_at.isoformat() if expires_at else None,
         **effect_def,
-        "prefix_custom": emoji_custom,       # for chat/shop display (may be <:..:id>)
-        "prefix_unicode": prefix_unicode,    # for nickname (unicode only)
-        "suffix_unicode": suffix_unicode,    # for nickname (unicode only)
+        "prefix_custom": emoji_custom,
+        "prefix_unicode": prefix_unicode,
+        "suffix_unicode": suffix_unicode,
         "meta": meta or {}
     }
 
-    # grant immediate role if configured
+    # Add role immediately if relevant
     role_id = entry.get("role_id")
     if role_id:
         role = member.guild.get_role(role_id)
         if role and role not in member.roles:
             await safe_add_role(member, role)
 
-    # attach effect to in-memory state — but store a CLEAN original_nick (no old decorations)
-    if member.id not in active_effects:
-        clean_base = strip_known_unicode(member.display_name)
-        active_effects[member.id] = {"original_nick": clean_base, "effects": []}
-
+    # Add to active effects
     active_effects[member.id]["effects"].append(entry)
 
-    # persist
-    effects[str(member.id)] = {
-        "original_nick": active_effects[member.id]["original_nick"],
-        "effects": active_effects[member.id]["effects"]
-    }
+    # Persist
+    effects[str(member.id)] = active_effects[member.id]
     save_effects()
 
     # schedule expiry and apply visible changes
-    asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
+    if entry.get("kind") in ("potion_polyjuice", "role_alohomora"):
+        asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
+
     await update_member_display(member)
+
+
+    # Update nickname/roles
+    await update_member_display(member)
+
 
 async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     delta = (expires_at - now_utc()).total_seconds()
@@ -471,13 +454,7 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     member = get_member_from_id(user_id)
     if member:
         await expire_effect(member, uid)
-    else:
-        if user_id in active_effects:
-            effects = active_effects[user_id]["effects"]
-            newlist = [e for e in effects if e["uid"] != uid]
-            active_effects[user_id]["effects"] = newlist
-            if not newlist:
-                del active_effects[user_id]
+
 
 async def expire_effect(member: discord.Member, uid: str):
     """Remove a single effect by uid and persist changes."""
@@ -506,55 +483,51 @@ async def expire_effect(member: discord.Member, uid: str):
             if role and role in member.roles:
                 await safe_remove_role(member, role)
 
-        # 🟢 Clear Silencio lock if this was a silence effect
-        if expired.get("kind") == "silence":
-            if member.id in silenced_until:
-                silenced_until.pop(member.id, None)
-    # 🚨 Special handling for silence
-    if expired and expired.get("kind") == "silence":
-        silenced_until.pop(member.id, None)
-
+    # Always recompute nickname after expiry
+    clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
+    active_effects.get(member.id, {}).update(original_nick=clean_nick)
     await update_member_display(member)
+
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
     if not data:
         return
+
     base = data.get("original_nick", member.display_name)
 
-    # Apply effects in order (stacking if multiple nickname effects exist)
+    # Apply effects in order (stackable)
     for e in data["effects"]:
         kind = e.get("kind")
+
         if kind == "nickname":
-            prefix = e.get("prefix_unicode", "") or ""
-            suffix = e.get("suffix_unicode", "") or ""
+            prefix = e.get("prefix_unicode", "")
+            suffix = e.get("suffix_unicode", "")
             base = f"{prefix}{base}{suffix}"
+
         elif kind == "truncate":
             length = e.get("length", 0)
             if length and len(base) > length:
                 base = base[:-length]
+
         elif kind == "role_lumos":
-            prefix = e.get("prefix_unicode", "") or ""
+            prefix = e.get("prefix_unicode", "")
             if prefix:
                 base = f"{prefix}{base}"
-        elif kind == "silence":
-            base = f"🤫{base}"
+
         elif kind and kind.startswith("potion_"):
-            prefix = e.get("prefix_unicode", "") or ""
+            prefix = e.get("prefix_unicode", "")
             if prefix:
                 base = f"{prefix}{base}"
 
     await set_nickname(member, base)
 
-async def update_member_display(member: discord.Member):
-    """Refresh nickname, roles, and silencing from active effects."""
 
-    # Always recompute nickname first (handles stacking correctly)
+async def update_member_display(member: discord.Member):
+    """Refresh nickname and roles from active effects."""
     await recompute_nickname(member)
 
     user_effects = active_effects.get(member.id, {}).get("effects", [])
-
-    # --- Roles ---
     for e in user_effects:
         kind = e.get("kind")
 
@@ -580,29 +553,6 @@ async def update_member_display(member: discord.Member):
                 role = member.guild.get_role(ROLE_IDS[chosen])
                 if role:
                     await safe_add_role(member, role)
-
-    # --- Silence handling ---
-    silence_expiries = []
-    for e in user_effects:
-        if e.get("kind") == "silence":
-            exp = e.get("expires_at")
-            if not exp:
-                continue
-            if isinstance(exp, str):
-                try:
-                    exp_dt = datetime.fromisoformat(exp)
-                except Exception:
-                    continue
-            elif isinstance(exp, datetime):
-                exp_dt = exp
-            else:
-                continue
-            silence_expiries.append(exp_dt)
-
-    if silence_expiries:
-        silenced_until[member.id] = max(silence_expiries)
-    else:
-        silenced_until.pop(member.id, None)
 
 # -------------------------
 # ROOM / ALOHOMORA GAME HELPERS
@@ -801,9 +751,6 @@ async def cast(ctx, spell: str, member: discord.Member):
     caster = ctx.author
     spell = spell.lower()
 
-    if caster.id in silenced_until and now_utc() < silenced_until[caster.id]:
-        return await ctx.send("🤫 You are silenced and cannot cast spells right now.")
-
     if spell not in EFFECT_LIBRARY:
         return await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shopspells`.")
 
@@ -812,13 +759,7 @@ async def cast(ctx, spell: str, member: discord.Member):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to cast that spell!")
 
-    if spell == "silencio":
-        now = now_utc()
-        last = silencio_last.get(member.id)
-        if last and now - last < timedelta(days=7):
-            return await ctx.send("⏳ Silencio can only be cast on this user once per week.")
-        silencio_last[member.id] = now
-
+    # Alohomora has cooldown
     if spell == "alohomora":
         now = now_utc()
         last = alohomora_cooldowns.get(member.id)
@@ -826,30 +767,29 @@ async def cast(ctx, spell: str, member: discord.Member):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
 
-       # finite spell purchased: remove a silence effect if present, otherwise remove most recent
+    # Finite: remove most recent effect
     if spell == "finite":
         remove_galleons_local(caster.id, cost)
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
             return await ctx.send("❌ That user has no active spells/potions to finite.")
 
         effects_list = active_effects[member.id]["effects"]
-
-        # Find the most recent silence effect (search from end backwards)
-        silence_idx = next((i for i in range(len(effects_list)-1, -1, -1)
-                            if effects_list[i].get("kind") == "silence"), None)
-
-        if silence_idx is not None:
-            idx_to_remove = silence_idx
-        else:
-            idx_to_remove = len(effects_list) - 1
-
-        entry = effects_list[idx_to_remove]
+        entry = effects_list[-1]  # remove the most recent
         await expire_effect(member, entry["uid"])
         return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{entry['effect']}**.")
 
+    # Alohomora starts the potion game
     if spell == "alohomora":
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
         await announce_room_for(member)
+        return
+
+    # Default: any other spell
+    remove_galleons_local(caster.id, cost)
+    await apply_effect_to_member(member, spell, source="spell")
+    await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+
+
 
 # -------------------------
 # COMMAND: DRINK (potions)
@@ -868,22 +808,24 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to buy that potion!")
 
+    # Polyjuice: prevent stacking
     if pd.get("kind") == "potion_polyjuice":
-    	if member.id in active_effects and any(e.get("effect") == "polyjuice" for e in active_effects[member.id]["effects"]):
-        	return await ctx.send("You try to imbibe another Polyjuice, but can't get it down. 🤢 No galleons have been spent. Try again later.")
+        if member.id in active_effects and any(e.get("effect") == "polyjuice" for e in active_effects[member.id]["effects"]):
+            return await ctx.send("You try to imbibe another Polyjuice, but can't get it down. 🤢 No galleons have been spent. Try again later.")
 
     remove_galleons_local(caster.id, cost)
 
-    # Bezoar (cleanse)
+    # Bezoar (cleanse potions only)
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
-            to_remove = [e["uid"] for e in active_effects[member.id]["effects"] if (e.get("kind") or "").startswith("potion_") or e.get("effect") in POTION_LIBRARY]
+            to_remove = [e["uid"] for e in active_effects[member.id]["effects"]
+                         if (e.get("kind") or "").startswith("potion_") or e.get("effect") in POTION_LIBRARY]
             for uid in to_remove:
                 await expire_effect(member, uid)
         await ctx.send(f"🧪 {caster.display_name} used Bezoar on {member.display_name}. Potion effects removed.")
         return
 
-    # Polyjuice special-handling
+    # Polyjuice special-handling (24h only)
     if pd["kind"] == "potion_polyjuice":
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
@@ -899,7 +841,8 @@ async def drink(ctx, potion: str, member: discord.Member = None):
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
         return
 
-    await apply_effect_to_member(member, potion, source="potion")
+    # All other potions: permanent until finite/cleareffects
+    await apply_effect_to_member(member, potion, source="potion", meta={"permanent": True})
     await ctx.send(f"🧪 {caster.display_name} gave **{potion.capitalize()}** to {member.display_name}!")
 
 # -------------------------
@@ -974,23 +917,28 @@ async def finite(ctx, member: discord.Member, effect_name: str = None):
     if member.id not in active_effects:
         return await ctx.send("No active spells/potions on this user.")
 
-    effects = active_effects[member.id]["effects"]
+    effects_list = active_effects[member.id]["effects"]
+
     if effect_name:
+        effect_name = effect_name.lower().strip()
+        # Search by "effect" field (safer than "name")
         idx = None
-        for i in range(len(effects)-1, -1, -1):
-            if effects[i]["name"] == effect_name.lower():
+        for i in range(len(effects_list)-1, -1, -1):
+            if effects_list[i].get("effect", "").lower() == effect_name:
                 idx = i
                 break
+
         if idx is None:
-            return await ctx.send("That effect was not found on the user.")
-        uid = effects[idx]["uid"]
-        await expire_effect(member, uid)
-        return await ctx.send(f"✨ Removed **{effect_name}** from {member.display_name}.")
+            return await ctx.send(f"That effect (`{effect_name}`) was not found on {member.display_name}.")
+
+        entry = effects_list[idx]
+        await expire_effect(member, entry["uid"])
+        return await ctx.send(f"✨ Removed **{entry['effect']}** from {member.display_name}.")
     else:
-        last = effects[-1]
-        uid = last["uid"]
-        await expire_effect(member, uid)
-        return await ctx.send(f"✨ Removed the most recent effect from {member.display_name}.")
+        # Default: remove the most recent effect
+        last = effects_list[-1]
+        await expire_effect(member, last["uid"])
+        return await ctx.send(f"✨ Removed the most recent effect (**{last['effect']}**) from {member.display_name}.")
 
 # -------------------------
 # CLEAR EFFECTS COMMAND
@@ -1036,17 +984,24 @@ async def on_ready():
         if not member:
             continue
 
+        # Clean nickname so we don't stack emojis forever
+        clean_nick = strip_known_unicode(data.get("original_nick", member.display_name))
+
         active_effects[member.id] = {
-            "original_nick": data.get("original_nick", member.display_name),
+            "original_nick": clean_nick,
             "effects": []
         }
 
         for e in data.get("effects", []):
             try:
                 exp_time = datetime.fromisoformat(e["expires_at"])
+                # Only reapply if still valid
                 if exp_time > datetime.utcnow():
                     active_effects[member.id]["effects"].append(e)
-                    asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
+
+                    # Schedule expiry only for temporary ones
+                    if e.get("kind") in ("potion_polyjuice", "role_alohomora"):
+                        asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
                 else:
                     print(f"[Hedwig] Removing expired effect for {member.display_name}")
             except Exception as err:
