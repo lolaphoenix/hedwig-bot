@@ -604,21 +604,22 @@ async def start_duel_sequence(ctx, challenger, challenged):
     await asyncio.sleep(5)
     await ctx.send(f"*{challenger.display_name} and {challenged.display_name} lift their wands, turn their backs, and begin walking to the end...*")
     await asyncio.sleep(3)
-    await ctx.send("On the count of three, type `!duel cast` to cast your spell!")
+    await ctx.send("On the count of three, type `!duelcast` to cast your spell!")
     await asyncio.sleep(5)
     await ctx.send("Three...")
     await asyncio.sleep(2)
     await ctx.send("Two...")
     await asyncio.sleep(1)
+    await ctx.send("One... **GO!**")
 
     winner = None
     loser = None
     
     try:
         def check(m):
-            return m.content.lower() == '!duel cast' and m.author in [challenger, challenged] and m.channel == ctx.channel
+            return m.content.lower() == '!duelcast' and m.author in [challenger, challenged] and m.channel == ctx.channel
 
-        msg = await bot.wait_for('message', check=check, timeout=10.0)
+        msg = await bot.wait_for('message', check=check, timeout=60.0)
         winner = msg.author
         loser = challenger if winner == challenged else challenged
 
@@ -633,7 +634,6 @@ async def start_duel_sequence(ctx, challenger, challenged):
         loser = challenged
 
     finally:
-        # This block always runs, whether there was a winner or a timeout
         now = dt.datetime.utcnow()
         duel_cooldowns[winner.id] = now
         duel_cooldowns[loser.id] = now
@@ -743,7 +743,7 @@ async def duel(ctx, challenged_user: discord.Member = None):
     }
     
     # Send challenge message and wait for confirmation
-    await ctx.send(f"⚔️ **{challenged_user.mention}**, you have been challenged to a wizard's duel by **{challenger.mention}**! Do you accept? Type `!duel confirm` to confirm.")
+    await ctx.send(f"⚔️ **{challenged_user.mention}**, you have been challenged to a wizard's duel by **{challenger.mention}**! Do you accept? Type `!duelconfirm` to confirm.")
 
 @bot.command(name='duelconfirm')
 async def duel_confirm(ctx):
@@ -1105,23 +1105,20 @@ async def trigger_game(ctx, member: discord.Member = None):
 # -------------------------
 
 @bot.command()
-async def cleareffects(ctx, member: discord.Member = None):
-    """Admin: clear all active effects for a user (or everyone if none)."""
-    if not is_staff_allowed(ctx.author):
-        return await ctx.send("❌ You don’t have permission to use this.")
-
-    if member:
-        active_effects.pop(member.id, None)
-        effects.pop(str(member.id), None)
-        save_effects()
-        await update_member_display(member)
-        await ctx.send(f"🧹 Cleared all active effects for {member.display_name}.")
+@has_any_role(ALOHOMORA_ROLE_NAME, "Head of House", "Prefects")
+async def cleareffects(ctx, member: discord.Member):
+    if member.id in active_effects:
+        for e in list(active_effects[member.id]["effects"]):
+            await expire_effect(member, e["uid"])
+        await ctx.send(f"🪄 All spell effects have been removed from {member.display_name}.")
     else:
-        active_effects.clear()
-        effects.clear()
-        save_effects()
-        await ctx.send("🧹 Cleared ALL active effects for everyone.")
-
+        await ctx.send(f"❌ {member.display_name} has no active effects to clear.")
+    
+    # NEW: Remove duel cooldown
+    if member.id in duel_cooldowns:
+        del duel_cooldowns[member.id]
+        save_duel_cooldowns()
+        await ctx.send(f"🕰️ Duel cooldown for {member.display_name} has been reset.")
 
 # -------------------------
 # STARTUP / RUN
