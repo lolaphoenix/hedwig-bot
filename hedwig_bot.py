@@ -7,7 +7,7 @@ import discord
 import json
 import time
 import signal
-import datetime as dt 
+import datetime as dt
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -23,13 +23,16 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# -------------------------
+# GLOBAL VARIABLES
+# -------------------------
 # Channel IDs
 OWLRY_CHANNEL_ID = 1410875871249829898
 ROOM_OF_REQUIREMENT_ID = 1413134135169646624
 GRINGOTTS_CHANNEL_ID = 1413047433016901743
 DUELING_CLUB_ID = 1417131924132069416
 
-# Role IDs (from you)
+# Role IDs
 ROLE_IDS = {
     "lumos": 1413122717682761788,
     "amortentia": 1414255673973280909,
@@ -42,24 +45,20 @@ ROLE_IDS = {
 }
 ALOHOMORA_ROLE_NAME = "Alohomora"
 
-# Potion emojis
+# Emojis and Mappings
 POTION_EMOJIS = [
     "<:potion1:1413860131073953856>",
     "<:potion2:1413860185801490463>",
     "<:potion3:1413860235382231202>",
     "<:potion4:1413860291124531220>",
-    "<:potion5:1413860345055019201>",
+    "<:potion5:1413680696985442334>",
 ]
-
-# House emojis
 house_emojis = {
     "gryffindor": "<:gryffindor:1398846272114524300>",
     "slytherin": "<:slytherin:1398846083463122984>",
     "ravenclaw": "<:ravenclaw:1398846388430835752>",
-    "hufflepuff": "<:hufflepuff:1398846494844387379>",
+    "hufflepuff": "<:hufflepuff:1409203862757310534>",
 }
-
-# Custom effect emoji mappings
 effect_emojis = {
     "tarantallegra": "<:tarantallegra:1415595049411936296>",
     "serpensortia": "<:serpensortia:1415595048124289075>",
@@ -75,12 +74,9 @@ effect_emojis = {
     "bezoar": "<:bezoar:1415594792217350255>",
     "felixfelicis": "<:felixfelicis:1413679761036673186>",
     "draughtlivingdeath": "<:draughtoflivingdeath:1413679622041894985>",
-    "amortentia": "<:amortentia:1413679525178380369>",
     "polyjuice": "<:polyjuice:1413679815520944158>",
     "finite": "✂️"
 }
-
-# Optional unicode versions (for nicknames, etc.)
 effect_unicode = {
     "tarantallegra": "💃",
     "serpensortia": "🐍",
@@ -96,16 +92,21 @@ effect_unicode = {
     "bezoar": "💊",
     "felixfelicis": "🍀",
     "draughtlivingdeath": "💀",
-    "amortentia": "💖",
     "polyjuice": "🧪",
     "finite": "✂️"
 }
 
-# New global dictionaries for dueling state
+# In-memory State
+galleons = {}
+house_points = {h: 0 for h in house_emojis}
+effects = {}
+active_effects = {}
 active_duels = {}
 duel_cooldowns = {}
-active_effects = {}
-effects = {}
+last_daily = {}
+active_potions = {}
+alohomora_cooldowns = {}
+
 # -------------------------
 # PERSISTENCE: data files
 # -------------------------
@@ -114,6 +115,7 @@ try:
 except NameError:
     DATA_DIR = os.path.join(os.getcwd(), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
+
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
 POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 EFFECTS_FILE = os.path.join(DATA_DIR, "effects.json")
@@ -122,6 +124,11 @@ DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 # in-memory state (will be loaded on start)
 galleons = {}                          # int_user_id -> int
 house_points = {h: 0 for h in house_emojis}
+
+# -------------------------
+# PERSISTENCE FUNCTIONS
+# -------------------------
+
 # --- galleons persistence ---
 def load_galleons():
     global galleons
@@ -177,10 +184,6 @@ def save_house_points():
     except Exception as e:
         print("[Hedwig] Failed to save house points:", e)
 
-# -------------------------
-# Persistence Functions
-# -------------------------
-
 def load_effects():
     global effects
     try:
@@ -193,19 +196,6 @@ def save_effects():
     with open(EFFECTS_FILE, "w") as f:
         json.dump(effects, f, indent=4)
 
-
-# -------------------------
-# STATE (OTHER IN-MEMORY)
-# -------------------------
-last_daily = {}           # user_id -> datetime
-active_effects = {}       # user_id -> {"original_nick": str, "effects": [ ... ]}
-active_potions = {}       # user_id -> {"winning": int, "chosen": bool, "started_by": id}
-
-alohomora_cooldowns = {}    # target_user_id -> datetime
-
-# -------------------------
-# PERSISTENCE: Dueling
-# -------------------------
 
 def load_duel_cooldowns():
     global duel_cooldowns
@@ -238,6 +228,7 @@ def save_duel_cooldowns():
 # -------------------------
 # HELPERS
 # -------------------------
+
 def now_utc():
     return datetime.utcnow()
 
