@@ -215,19 +215,15 @@ def get_member_from_id(user_id: int):
     return None
 
 def strip_known_unicode(name: str) -> str:
-    """Remove only unicode emoji decorations used in effects from a nickname."""
+    """Remove Unicode emoji decorations used by effects/potions from a nickname."""
     if not name:
         return name
-    for v in EFFECT_LIBRARY.values():
-        for k in ("prefix_unicode", "suffix_unicode"):
-            val = v.get(k)
-            if val:
-                name = name.replace(val, "")
-    for v in POTION_LIBRARY.values():
-        for k in ("prefix_unicode", "suffix_unicode"):
-            val = v.get(k)
-            if val:
-                name = name.replace(val, "")
+    for lib in (EFFECT_LIBRARY, POTION_LIBRARY):
+        for v in lib.values():
+            for key in ("prefix_unicode", "suffix_unicode"):
+                val = v.get(key)
+                if val:
+                    name = name.replace(val, "")
     return name.strip()
 
 async def safe_add_role(member: discord.Member, role: discord.Role):
@@ -459,7 +455,6 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
 
 
 async def expire_effect(member: discord.Member, uid: str):
-    """Remove a single effect by uid and persist changes."""
     if member.id not in active_effects:
         effects.pop(str(member.id), None)
         save_effects()
@@ -475,21 +470,25 @@ async def expire_effect(member: discord.Member, uid: str):
     else:
         effects.pop(str(member.id), None)
         active_effects.pop(member.id, None)
+
     save_effects()
 
-    # If the expired effect granted a role, remove it
     if expired:
         role_id = expired.get("role_id")
         if role_id:
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
-
-    # Always recompute nickname after expiry
+    
+    # Clean nickname base to remove any leftover Unicode emoji decorations
     clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
-    active_effects.get(member.id, {}).update(original_nick=clean_nick)
-    await update_member_display(member)
+    
+    # Update original nickname stored in active_effects
+    if member.id in active_effects:
+        active_effects[member.id]["original_nick"] = clean_nick
 
+    # Recompute and apply updated nickname
+    await update_member_display(member)
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
@@ -724,17 +723,13 @@ async def shopspells(ctx):
     for name, data in EFFECT_LIBRARY.items():
         if name == "polyfail_cat":
             continue
-        # Prefer custom emoji (prefix), then emoji, then unicode
-        emoji = data.get("prefix") or data.get("emoji") or data.get("prefix_unicode", "")
-        # Special rule for Finite: no custom emoji, just scissors unicode
-        if name == "finite" and not emoji:
-            emoji = "✂️"
+        # Get emoji from effect_emojis dictionary, fallback to prefix_unicode or empty string
+        emoji = effect_emojis.get(name, data.get("prefix_unicode", ""))
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
         msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n {desc}\n\n"
     msg += "Use `!cast @user` to buy and cast spells!\n"
     await ctx.send(msg)
-
 
 @bot.command()
 async def shoppotions(ctx):
