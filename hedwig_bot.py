@@ -215,17 +215,20 @@ def get_member_from_id(user_id: int):
     return None
 
 def strip_known_unicode(name: str) -> str:
-    """Remove any unicode decorations we use for effects."""
+    """Remove any custom or unicode emojis used for effects/potions from a nickname."""
     if not name:
         return name
+    # Remove all custom and unicode effect emoji
     for v in EFFECT_LIBRARY.values():
-        for k in ("prefix_unicode", "suffix_unicode"):
-            if v.get(k):
-                name = name.replace(v[k], "")
+        for k in ("prefix", "suffix", "prefix_unicode", "suffix_unicode"):
+            val = v.get(k)
+            if val:
+                name = name.replace(val, "")
     for v in POTION_LIBRARY.values():
-        for k in ("prefix_unicode", "suffix_unicode"):
-            if v.get(k):
-                name = name.replace(v[k], "")
+        for k in ("prefix", "suffix", "prefix_unicode", "suffix_unicode"):
+            val = v.get(k)
+            if val:
+                name = name.replace(val, "")
     return name.strip()
 
 async def safe_add_role(member: discord.Member, role: discord.Role):
@@ -722,11 +725,15 @@ async def shopspells(ctx):
     for name, data in EFFECT_LIBRARY.items():
         if name == "polyfail_cat":
             continue
-        emoji = data.get("emoji") or data.get("prefix_unicode") or ""
+        # Prefer custom emoji (prefix), then emoji, then unicode
+        emoji = data.get("prefix") or data.get("emoji") or data.get("prefix_unicode", "")
+        # Special rule for Finite: no custom emoji, just scissors unicode
+        if name == "finite" and not emoji:
+            emoji = "✂️"
         cost = data.get("cost", "?")
         desc = data.get("description", "No description available.")
-        msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n   {desc}\n\n"
-    msg += "Use `!cast <spell> @user` to buy and cast spells!\n"
+        msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n {desc}\n\n"
+    msg += "Use `!cast @user` to buy and cast spells!\n"
     await ctx.send(msg)
 
 @bot.command()
