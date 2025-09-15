@@ -632,7 +632,7 @@ async def start_duel_sequence(ctx, challenger, challenged):
     await asyncio.sleep(5)
     await ctx.send(f"*{challenger.display_name} and {challenged.display_name} lift their wands, turn their backs, and begin walking to the end...*")
     await asyncio.sleep(3)
-    await ctx.send("On the count of three, type `!duel cast` to cast your spell!")
+    await ctx.send("On the count of three, type `!duelcast` to cast your spell!")
     await asyncio.sleep(5)
     await ctx.send("Three...")
     await asyncio.sleep(2)
@@ -772,7 +772,7 @@ async def duel(ctx, challenged_user: discord.Member = None):
     }
     
     # Send challenge message and wait for confirmation
-    await ctx.send(f"⚔️ **{challenged_user.mention}**, you have been challenged to a wizard's duel by **{challenger.mention}**! Do you accept? Type `!duel confirm` to confirm.")
+    await ctx.send(f"⚔️ **{challenged_user.mention}**, you have been challenged to a wizard's duel by **{challenger.mention}**! Do you accept? Type `!duelconfirm` to confirm.")
 
 @bot.command(name='duelconfirm')
 async def duel_confirm(ctx):
