@@ -767,12 +767,23 @@ async def cast(ctx, spell: str, member: discord.Member):
         if last and now - last < timedelta(hours=24):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
+        # Alohomora starts the potion game
+        active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
+        await announce_room_for(member)
+        remove_galleons_local(caster.id, cost)
+        await apply_effect_to_member(member, spell, source="spell")
+        return
 
+    # Diffindo check
+    if spell == "diffindo":
+        if len(member.display_name) <= 5:
+            return await ctx.send(f"✨ Your spell bounces off the wall! The target's nickname is too short. No galleons were taken.")
+            
     # Finite: remove most recent effect
     if spell == "finite":
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
             return await ctx.send("❌ That user has no active spells/potions to finite.")
-
+        
         effects_list = active_effects[member.id]["effects"]
         entry = effects_list[-1]
         effect_name = entry.get("effect")
@@ -790,17 +801,10 @@ async def cast(ctx, spell: str, member: discord.Member):
         await expire_effect(member, entry["uid"])
         return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{effect_name}**.")
 
-    # Alohomora starts the potion game
-    if spell == "alohomora":
-        active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
-        await announce_room_for(member)
-        return
-
-    # Default: any other spell
+    # All other spells:
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
-
 
 
 # -------------------------
@@ -837,26 +841,30 @@ async def drink(ctx, potion: str, member: discord.Member = None):
                 minutes, seconds = divmod(remainder, 60)
                 return await ctx.send(f"You try to imbibe another Polyjuice, but can't get it down. 🤢 You must wait {hours} hours, {minutes} minutes, and {seconds} seconds before you can drink it again.")
 
-    # Remove galleons after cooldown check passes
-    remove_galleons_local(caster.id, cost)
-
     # Bezoar (cleanse potions only)
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
             to_remove = [e["uid"] for e in active_effects[member.id]["effects"]
                          if (e.get("kind") or "").startswith("potion_") and e.get("effect") not in ("polyjuice", "polyfail_cat")]
-            for uid in to_remove:
-                await expire_effect(member, uid)
-        await ctx.send(f"🧪 {caster.display_name} used Bezoar on {member.display_name}. Potion effects removed.")
+            if len(to_remove) > 0:
+                remove_galleons_local(caster.id, cost)
+                for uid in to_remove:
+                    await expire_effect(member, uid)
+                await ctx.send(f"🧪 {caster.display_name} used Bezoar on {member.display_name}. Potion effects removed.")
+            else:
+                return await ctx.send("❌ You can't use a Bezoar for that potion! No galleons have been taken.")
+        else:
+            return await ctx.send("❌ You can't use a Bezoar for that potion! No galleons have been taken.")
         return
 
     # Polyjuice special-handling
     if pd["kind"] == "potion_polyjuice":
+        remove_galleons_local(caster.id, cost) # Remove galleons for a successful polyjuice
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
         user_house = get_user_house(member)
         if user_house == chosen:
-            # backfired
+            # Potion backfired since user already has the house role
             await apply_effect_to_member(member, "polyfail_cat", source="potion")
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name}... it misfired! You get whiskers 🐱 for 24 hours.")
         else:
@@ -867,6 +875,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
         return
 
     # All other potions: permanent until finite/cleareffects
+    remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, potion, source="potion", meta={"permanent": True})
     await ctx.send(f"🧪 {caster.display_name} gave **{potion.capitalize()}** to {member.display_name}!")
 
