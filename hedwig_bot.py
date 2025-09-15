@@ -178,6 +178,34 @@ def save_house_points():
     except Exception as e:
         print("[Hedwig] Failed to save house points:", e)
 
+# --- duel persistence ---
+
+def load_duel_cooldowns():
+    global duel_cooldowns
+    try:
+        if os.path.exists(DUEL_COOLDOWNS_FILE):
+            with open(DUEL_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            duel_cooldowns = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
+            print(f"[Hedwig] loaded {len(duel_cooldowns)} duel cooldowns from {DUEL_COOLDOWNS_FILE}")
+        else:
+            duel_cooldowns = {}
+            save_duel_cooldowns()
+            print(f"[Hedwig] created new duel cooldowns file at {DUEL_COOLDOWNS_FILE}")
+    except Exception as e:
+        print("[Hedwig] Failed to load duel cooldowns:", e)
+        duel_cooldowns = {}
+
+def save_duel_cooldowns():
+    try:
+        tmp = DUEL_COOLDOWNS_FILE + ".tmp"
+        serializable = {str(k): v.isoformat() for k, v in duel_cooldowns.items()}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+        os.replace(tmp, DUEL_COOLDOWNS_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save duel cooldowns:", e)
+
 # -------------------------
 # Persistence Functions
 # -------------------------
@@ -1121,18 +1149,13 @@ async def cleareffects(ctx, member: discord.Member = None):
     else:
         await ctx.send(f"No active effects found for {target_member.display_name}.")
 
-    # New logic to clear the duel state
-    if target_member.id in duels:
-        duel_id = duels.pop(target_member.id)
-        if duel_id in duels:
-            # We need to find and remove the opponent's state as well
-            duel_info = duels.pop(duel_id)
-            for player_id in duel_info["players"]:
-                if player_id != target_member.id:
-                    duels.pop(player_id, None)
-
-        await ctx.send(f"⚔️ Duel timer has been cleared for {target_member.display_name}.")
-
+    # Clear the duel cooldown
+    if target_member.id in duel_cooldowns:
+        del duel_cooldowns[target_member.id]
+        save_duel_cooldowns()
+        await ctx.send(f"⚔️ Duel cooldown has been cleared for {target_member.display_name}.")
+    else:
+        await ctx.send(f"No duel cooldown found for {target_member.display_name}.")
 
 # -------------------------
 # STARTUP / RUN
