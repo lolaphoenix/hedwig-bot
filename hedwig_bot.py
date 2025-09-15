@@ -215,17 +215,16 @@ def get_member_from_id(user_id: int):
     return None
 
 def strip_known_unicode(name: str) -> str:
-    """Remove any custom or unicode emojis used for effects/potions from a nickname."""
+    """Remove only unicode emoji decorations used in effects from a nickname."""
     if not name:
         return name
-    # Remove all custom and unicode effect emoji
     for v in EFFECT_LIBRARY.values():
-        for k in ("prefix", "suffix", "prefix_unicode", "suffix_unicode"):
+        for k in ("prefix_unicode", "suffix_unicode"):
             val = v.get(k)
             if val:
                 name = name.replace(val, "")
     for v in POTION_LIBRARY.values():
-        for k in ("prefix", "suffix", "prefix_unicode", "suffix_unicode"):
+        for k in ("prefix_unicode", "suffix_unicode"):
             val = v.get(k)
             if val:
                 name = name.replace(val, "")
@@ -735,6 +734,7 @@ async def shopspells(ctx):
         msg += f"{emoji} **{name.capitalize()}** — {cost} galleons\n {desc}\n\n"
     msg += "Use `!cast @user` to buy and cast spells!\n"
     await ctx.send(msg)
+
 
 @bot.command()
 async def shoppotions(ctx):
