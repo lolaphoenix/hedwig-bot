@@ -215,7 +215,6 @@ def get_member_from_id(user_id: int):
     return None
 
 def strip_known_unicode(name: str) -> str:
-    """Remove Unicode emoji decorations used by effects/potions from a nickname."""
     if not name:
         return name
     for lib in (EFFECT_LIBRARY, POTION_LIBRARY):
@@ -225,6 +224,7 @@ def strip_known_unicode(name: str) -> str:
                 if val:
                     name = name.replace(val, "")
     return name.strip()
+
 
 async def safe_add_role(member: discord.Member, role: discord.Role):
     try:
@@ -479,15 +479,20 @@ async def expire_effect(member: discord.Member, uid: str):
             if role and role in member.roles:
                 await safe_remove_role(member, role)
 
-    # Clean original nickname from all Unicode emoji decorations
-    clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
-    
-    # Make sure to update the stored original nickname with the cleaned one
-    if member.id in active_effects:
-        active_effects[member.id]["original_nick"] = clean_nick
+	print(f"[Debug] Before cleaning nickname: {active_effects.get(member.id, {}).get('original_nick', member.display_name)}")
+	
+	# Clean the original nickname base of all Unicode emojis used by effects/potions
+	clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
 
-    # Finally, recompute and apply the nickname without removed effects
-    await update_member_display(member)
+	print(f"[Debug] After cleaning nickname: {clean_nick}")
+
+	# Update the stored original nickname for the user
+	if member.id in active_effects:
+    		active_effects[member.id]["original_nick"] = clean_nick
+
+	# Recompute and update the member's nickname on Discord
+	await update_member_display(member)
+
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
