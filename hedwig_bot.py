@@ -1105,23 +1105,28 @@ async def trigger_game(ctx, member: discord.Member = None):
 # CLEAR EFFECTS COMMAND
 # -------------------------
 
-@bot.command()
+@bot.command(name="cleareffects")
 async def cleareffects(ctx, member: discord.Member = None):
-    """Admin: clear all active effects for a user (or everyone if none)."""
     if not is_staff_allowed(ctx.author):
-        return await ctx.send("❌ You don’t have permission to use this.")
+        await ctx.send("Only Prefects and Heads of House can clear effects!")
+        return
 
-    if member:
-        active_effects.pop(member.id, None)
-        effects.pop(str(member.id), None)
-        save_effects()
-        await update_member_display(member)
-        await ctx.send(f"🧹 Cleared all active effects for {member.display_name}.")
+    target_member = member or ctx.author
+
+    if target_member.id in active_effects:
+        # Clear all effects for the target user.
+        for e in list(active_effects[target_member.id]["effects"]):
+            await remove_effect(target_member, e["uid"])
+
+        await ctx.send(f"🪄 All effects cleared for {target_member.display_name}.")
     else:
-        active_effects.clear()
-        effects.clear()
-        save_effects()
-        await ctx.send("🧹 Cleared ALL active effects for everyone.")
+        await ctx.send(f"No active effects found for {target_member.display_name}.")
+
+    # New logic to clear the duel timer
+    if target_member.id in duels:
+        duel_id = duels[target_member.id]
+        await end_duel(duel_id)
+        await ctx.send(f"⚔️ Duel timer has been cleared for {target_member.display_name}.")
 
 
 # -------------------------
