@@ -610,6 +610,7 @@ async def start_duel_sequence(ctx, challenger, challenged):
     await asyncio.sleep(2)
     await ctx.send("Two...")
     await asyncio.sleep(1)
+    await ctx.send("One... **GO**!")
 
     winner = None
     loser = None
