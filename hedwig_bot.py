@@ -727,7 +727,8 @@ async def hedwigmod(ctx):
         "`!resetpoints` — Reset house points globally\n"
         "`!givegalleons @user <amount>` — Give galleons to a user (Prefects & Head of House only)\n"
         "`!resetgalleons` — Clear all galleon balances globally\n"
-        "`!cast finite @user`  — Removes most recent spell/potion from a user\n"
+        "`!clear [number]` — Clears a number of messages (default 100) from the Dueling Club or Room of Requirement channels.\n"
+        "`!cast finite @user`  — Removes most recent spell/potion from a user\n"
         "`!trigger-game [@user]` — Prefects-only test: starts the Alohomora game for a user\n"
     )
     await ctx.send(msg)
@@ -1156,6 +1157,30 @@ async def cleareffects(ctx, member: discord.Member = None):
         await ctx.send(f"⚔️ Duel cooldown has been cleared for {target_member.display_name}.")
     else:
         await ctx.send(f"No duel cooldown found for {target_member.display_name}.")
+
+# -------------------------
+# CLEAR ROOMS COMMAND
+# -------------------------
+
+@bot.command(name="clear")
+async def clear_channel(ctx, limit: int = 100):
+    """
+    Clears messages from the Dueling Club or Room of Requirement channels.
+    Only Prefects and Heads of House can use this command.
+    """
+    if not is_staff_allowed(ctx.author):
+        await ctx.send("Only Prefects and Heads of House can clear channels!")
+        return
+
+    if ctx.channel.id not in [DUELING_CLUB_ID, ROOM_OF_REQUIREMENT_ID]:
+        await ctx.send("This command can only be used in the Dueling Club or Room of Requirement.")
+        return
+
+    try:
+        deleted = await ctx.channel.purge(limit=limit)
+        await ctx.send(f"🧹 Cleared {len(deleted)} messages from this channel.")
+    except Exception as e:
+        await ctx.send(f"An error occurred while trying to clear the channel: {e}")
 
 # -------------------------
 # STARTUP / RUN
