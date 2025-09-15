@@ -104,7 +104,8 @@ effect_unicode = {
 # New global dictionaries for dueling state
 active_duels = {}
 duel_cooldowns = {}
-
+active_effects = {}
+effects = {}
 # -------------------------
 # PERSISTENCE: data files
 # -------------------------
@@ -121,7 +122,6 @@ DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 # in-memory state (will be loaded on start)
 galleons = {}                          # int_user_id -> int
 house_points = {h: 0 for h in house_emojis}
-
 # --- galleons persistence ---
 def load_galleons():
     global galleons
