@@ -618,7 +618,7 @@ async def hedwigmod(ctx):
         "`!resetpoints` — Reset house points globally\n"
         "`!givegalleons @user <amount>` — Give galleons to a user (Prefects & Head of House only)\n"
         "`!resetgalleons` — Clear all galleon balances globally\n"
-        "`!finite @user`  — Removes most recent spell/potion from a user\n"
+        "`!cast finite @user`  — Removes most recent spell/potion from a user\n"
         "`!trigger-game [@user]` — Prefects-only test: starts the Alohomora game for a user\n"
     )
     await ctx.send(msg)
@@ -914,37 +914,6 @@ async def trigger_game(ctx, member: discord.Member = None):
         await ctx.send(f"[TEST MODE] The winning potion for {member.mention} is **{winning}**. (Visible because DM failed)")
 
     await ctx.send(f"🧪 Testing potion game started for {member.mention} (Prefects test).")
-
-# -------------------------
-# COMMAND: FINITE (manual/mod + purchasable via !cast finite)
-# -------------------------
-@bot.command()
-async def finite(ctx, member: discord.Member, effect_name: str = None):
-    if member.id not in active_effects:
-        return await ctx.send("No active spells/potions on this user.")
-
-    effects_list = active_effects[member.id]["effects"]
-
-    if effect_name:
-        effect_name = effect_name.lower().strip()
-        # Search by "effect" field (safer than "name")
-        idx = None
-        for i in range(len(effects_list)-1, -1, -1):
-            if effects_list[i].get("effect", "").lower() == effect_name:
-                idx = i
-                break
-
-        if idx is None:
-            return await ctx.send(f"That effect (`{effect_name}`) was not found on {member.display_name}.")
-
-        entry = effects_list[idx]
-        await expire_effect(member, entry["uid"])
-        return await ctx.send(f"✨ Removed **{entry['effect']}** from {member.display_name}.")
-    else:
-        # Default: remove the most recent effect
-        last = effects_list[-1]
-        await expire_effect(member, last["uid"])
-        return await ctx.send(f"✨ Removed the most recent effect (**{last['effect']}**) from {member.display_name}.")
 
 # -------------------------
 # CLEAR EFFECTS COMMAND
