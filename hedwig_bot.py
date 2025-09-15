@@ -7,6 +7,7 @@ import discord
 import json
 import time
 import signal
+import datetime as dt 
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -99,6 +100,44 @@ effect_unicode = {
     "polyjuice": "🧪",
     "finite": "✂️"
 }
+
+# New global dictionaries for dueling state
+active_duels = {}
+duel_cooldowns = {}
+
+# -------------------------
+# PERSISTENCE: Dueling
+# -------------------------
+
+DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
+
+def load_duel_cooldowns():
+    global duel_cooldowns
+    try:
+        if os.path.exists(DUEL_COOLDOWNS_FILE):
+            with open(DUEL_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # Convert string keys back to int and isoformat back to datetime
+            duel_cooldowns = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
+            print(f"[Hedwig] loaded {len(duel_cooldowns)} duel cooldowns.")
+        else:
+            duel_cooldowns = {}
+            save_duel_cooldowns()
+            print(f"[Hedwig] created new duel cooldowns file.")
+    except Exception as e:
+        print(f"[Hedwig] Failed to load duel cooldowns: {e}")
+        duel_cooldowns = {}
+
+def save_duel_cooldowns():
+    try:
+        tmp = DUEL_COOLDOWNS_FILE + ".tmp"
+        # Convert datetime objects to ISO format strings for JSON
+        serializable = {str(k): v.isoformat() for k, v in duel_cooldowns.items()}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+        os.replace(tmp, DUEL_COOLDOWNS_FILE)
+    except Exception as e:
+        print(f"[Hedwig] Failed to save duel cooldowns: {e}")
 
 # -------------------------
 # PERSISTENCE: data files
@@ -548,6 +587,60 @@ async def update_member_display(member: discord.Member):
     await recompute_nickname(member)
 
 # -------------------------
+# DUEL SEQUENCE
+# -------------------------
+
+async def start_duel_sequence(ctx, challenger, challenged):
+    outcomes = [
+        "casts Expelliarmus on",
+        "casts Stupefy on",
+        "casts Impedimenta on",
+        "casts Petrificus Totalus on",
+        "casts Confundo on"
+    ]
+
+    await ctx.send(f"💥 WELCOME TO THE DUEL! 💥\n**{challenger.mention}** vs **{challenged.mention}**")
+    await asyncio.sleep(10)
+    await ctx.send("Wands at the ready!")
+    await asyncio.sleep(5)
+    await ctx.send(f"*{challenger.display_name} and {challenged.display_name} lift their wands, turn their backs, and begin walking to the end...*")
+    await asyncio.sleep(3)
+    await ctx.send("On the count of three, type `!duel cast` to cast your spell!")
+    await asyncio.sleep(5)
+    await ctx.send("Three...")
+    await asyncio.sleep(2)
+    await ctx.send("Two...")
+    await asyncio.sleep(1)
+
+    winner = None
+    loser = None
+    
+    try:
+        def check(m):
+            return m.content.lower() == '!duel cast' and m.author in [challenger, challenged] and m.channel == ctx.channel
+
+        msg = await bot.wait_for('message', check=check, timeout=10.0)
+        winner = msg.author
+        loser = challenger if winner == challenged else challenged
+
+        random_spell = random.choice(outcomes)
+        await ctx.send(f"*{winner.display_name} {random_spell} {loser.display_name} and successfully disarms them!*")
+        add_galleons_local(winner.id, 100)
+        await ctx.send(f"🎉 Congratulations **{winner.mention}**! You've won **100 Galleons**!")
+        
+    except asyncio.TimeoutError:
+        await ctx.send("❌ No one cast their spell in time! The duel is a draw. No galleons were won.")
+        winner = challenger
+        loser = challenged
+
+    finally:
+        # This block always runs, whether there was a winner or a timeout
+        now = dt.datetime.utcnow()
+        duel_cooldowns[winner.id] = now
+        duel_cooldowns[loser.id] = now
+        save_duel_cooldowns()
+
+# -------------------------
 # ROOM / ALOHOMORA GAME HELPERS
 # -------------------------
 def pick_winning_potion():
@@ -610,6 +703,71 @@ async def hedwigmod(ctx):
         "`!trigger-game [@user]` — Prefects-only test: starts the Alohomora game for a user\n"
     )
     await ctx.send(msg)
+
+# -------------------------
+# COMMANDS: DUEL
+# -------------------------
+
+@bot.command()
+async def duel(ctx, challenged_user: discord.Member = None):
+    # Restrict to dueling club
+    if ctx.channel.id != DUELING_CLUB_ID:
+        return await ctx.send("❌ Duels can only be initiated in the Dueling Club.")
+
+    challenger = ctx.author
+
+    # Check for arguments
+    if not challenged_user:
+        return await ctx.send("❌ You must challenge someone to a duel! Use `!duel @username`.")
+
+    if challenged_user.bot:
+        return await ctx.send("❌ You cannot challenge a bot to a duel.")
+
+    if challenger == challenged_user:
+        return await ctx.send("❌ You cannot duel yourself.")
+
+    # Check for cooldowns
+    now = dt.datetime.utcnow()
+    if challenger.id in duel_cooldowns and (now - duel_cooldowns[challenger.id]).total_seconds() < 86400: # 86400 seconds = 24 hours
+        return await ctx.send("⏳ You have already dueled today. Wait 24 hours to duel again.")
+    if challenged_user.id in duel_cooldowns and (now - duel_cooldowns[challenged_user.id]).total_seconds() < 86400:
+        return await ctx.send(f"⏳ {challenged_user.display_name} has already dueled today.")
+        
+    # Check if a duel is already in progress for either user
+    if challenger.id in active_duels or challenged_user.id in active_duels:
+        return await ctx.send("❌ One of you is already in a duel.")
+
+    # Store the duel request
+    active_duels[challenger.id] = {
+        'challenged': challenged_user,
+        'channel': ctx.channel
+    }
+    
+    # Send challenge message and wait for confirmation
+    await ctx.send(f"⚔️ **{challenged_user.mention}**, you have been challenged to a wizard's duel by **{challenger.mention}**! Do you accept? Type `!duel confirm` to confirm.")
+
+@bot.command(name='duelconfirm')
+async def duel_confirm(ctx):
+    challenger = None
+    challenged = ctx.author
+    
+    # Find the duel challenge
+    for k, v in active_duels.items():
+        if v['challenged'].id == challenged.id:
+            challenger = ctx.guild.get_member(k)
+            break
+            
+    if not challenger:
+        return await ctx.send("❌ You have not been challenged to a duel.")
+
+    # Start the duel sequence
+    active_duels.pop(challenger.id, None) # Use .pop() for safer deletion
+    await start_duel_sequence(ctx, challenger, challenged)
+
+@bot.command(name='duelcast')
+async def duel_cast(ctx):
+    # This command is handled by the wait_for, so it just returns if called directly
+    return
 
 # -------------------------
 # COMMANDS: HOUSE POINTS
@@ -976,6 +1134,7 @@ async def on_ready():
     load_galleons()
     load_house_points()
     load_effects()
+    load_duel_cooldowns()
 
     guild = bot.get_guild(1398801863549259796)
 
