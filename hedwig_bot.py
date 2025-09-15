@@ -970,31 +970,36 @@ async def on_ready():
 
     guild = bot.get_guild(1398801863549259796)
 
-    new_effects = {}  # <- only keep active effects
+    new_effects = {}
 
     # Rehydrate saved effects
-    for uid, data in effects.items():
+    for uid, data in list(effects.items()):  # Use a copy to avoid modification issues
         member = guild.get_member(int(uid)) if guild else None
         if not member:
             continue
+        
+        # Check for the 'original_nick' key and set a default if not found
+        original_nick = data.get("original_nick", member.display_name)
 
         active_effects[member.id] = {
-            "original_nick": clean_nick,
+            "original_nick": original_nick,
             "effects": []
         }
 
         for e in data.get("effects", []):
             try:
-                exp_time = datetime.fromisoformat(e["expires_at"])
-                # Only reapply if still valid
-                if exp_time > datetime.utcnow():
+                if "expires_at" in e and e["expires_at"]:
+                    exp_time = datetime.fromisoformat(e["expires_at"])
+                    # Only reapply if still valid
+                    if exp_time > datetime.utcnow():
+                        active_effects[member.id]["effects"].append(e)
+                        # Schedule expiry only for temporary ones
+                        if e.get("kind") in ("potion_polyjuice", "role_alohomora"):
+                            asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
+                else:
+                    # If there's no expiration date, assume it's a permanent effect and reapply
                     active_effects[member.id]["effects"].append(e)
 
-                    # Schedule expiry only for temporary ones
-                    if e.get("kind") in ("potion_polyjuice", "role_alohomora"):
-                        asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
-                else:
-                    print(f"[Hedwig] Removing expired effect for {member.display_name}")
             except Exception as err:
                 print(f"[Hedwig] Error restoring effect for {member.display_name}: {err}")
 
@@ -1011,7 +1016,6 @@ async def on_ready():
         await owlry_channel.send("🦉 Hedwig is flying again!")
 
     print(f"[Hedwig] Logged in as {bot.user}")
-
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
