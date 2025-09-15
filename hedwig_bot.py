@@ -121,53 +121,11 @@ POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 EFFECTS_FILE = os.path.join(DATA_DIR, "effects.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 
-def load_effects():
-    global effects
-    try:
-        with open(EFFECTS_FILE, "r") as f:
-            effects = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        effects = {}
-
-def save_effects():
-    with open(EFFECTS_FILE, "w") as f:
-        json.dump(effects, f, indent=4)
-
-def load_duel_cooldowns():
-    global duel_cooldowns
-    try:
-        if os.path.exists(DUEL_COOLDOWNS_FILE):
-            with open(DUEL_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            # Convert string keys back to int and isoformat back to datetime
-            duel_cooldowns = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
-            print(f"[Hedwig] loaded {len(duel_cooldowns)} duel cooldowns.")
-        else:
-            duel_cooldowns = {}
-            save_duel_cooldowns()
-            print(f"[Hedwig] created new duel cooldowns file.")
-    except Exception as e:
-        print(f"[Hedwig] Failed to load duel cooldowns: {e}")
-        duel_cooldowns = {}
-
-def save_duel_cooldowns():
-    try:
-        tmp = DUEL_COOLDOWNS_FILE + ".tmp"
-        # Convert datetime objects to ISO format strings for JSON
-        serializable = {str(k): v.isoformat() for k, v in duel_cooldowns.items()}
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(serializable, f, indent=2)
-        os.replace(tmp, DUEL_COOLDOWNS_FILE)
-    except Exception as e:
-        print(f"[Hedwig] Failed to save duel cooldowns: {e}")
-
-# in-memory state (will be loaded on start)
-galleons = {}                          # int_user_id -> int
-house_points = {h: 0 for h in house_emojis}
-
 # -------------------------
 # PERSISTENCE FUNCTIONS
 # -------------------------
+# These functions must be defined *after* the file variables above
+# so they can be referenced without a NameError.
 
 # --- galleons persistence ---
 def load_galleons():
@@ -224,6 +182,45 @@ def save_house_points():
     except Exception as e:
         print("[Hedwig] Failed to save house points:", e)
 
+def load_effects():
+    global effects
+    try:
+        with open(EFFECTS_FILE, "r") as f:
+            effects = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        effects = {}
+
+def save_effects():
+    with open(EFFECTS_FILE, "w") as f:
+        json.dump(effects, f, indent=4)
+
+def load_duel_cooldowns():
+    global duel_cooldowns
+    try:
+        if os.path.exists(DUEL_COOLDOWNS_FILE):
+            with open(DUEL_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # Convert string keys back to int and isoformat back to datetime
+            duel_cooldowns = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
+            print(f"[Hedwig] loaded {len(duel_cooldowns)} duel cooldowns.")
+        else:
+            duel_cooldowns = {}
+            save_duel_cooldowns()
+            print(f"[Hedwig] created new duel cooldowns file.")
+    except Exception as e:
+        print(f"[Hedwig] Failed to load duel cooldowns: {e}")
+        duel_cooldowns = {}
+
+def save_duel_cooldowns():
+    try:
+        tmp = DUEL_COOLDOWNS_FILE + ".tmp"
+        # Convert datetime objects to ISO format strings for JSON
+        serializable = {str(k): v.isoformat() for k, v in duel_cooldowns.items()}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+        os.replace(tmp, DUEL_COOLDOWNS_FILE)
+    except Exception as e:
+        print(f"[Hedwig] Failed to save duel cooldowns: {e}")
 
 # -------------------------
 # STATE (OTHER IN-MEMORY)
