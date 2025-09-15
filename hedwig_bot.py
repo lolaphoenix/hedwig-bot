@@ -479,16 +479,20 @@ async def expire_effect(member: discord.Member, uid: str):
             if role and role in member.roles:
                 await safe_remove_role(member, role)
 
-	# Clean the original nickname base of all Unicode emojis used by effects/potions
-	clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
+    # Debug prints to check the nickname cleaning
+    print(f"[Debug] Before cleaning nickname: {active_effects.get(member.id, {}).get('original_nick', member.display_name)}")
 
-	# Update the stored original nickname for the user
-	if member.id in active_effects:
-    		active_effects[member.id]["original_nick"] = clean_nick
+    # Clean the original nickname base (remove all Unicode emojis from effects/potions)
+    clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
 
-	# Recompute and update the member's nickname on Discord
-	await update_member_display(member)
+    print(f"[Debug] After cleaning nickname: {clean_nick}")
 
+    # Update the stored original nickname for the user
+    if member.id in active_effects:
+        active_effects[member.id]["original_nick"] = clean_nick
+
+    # Recompute and update the member's nickname on Discord
+    await update_member_display(member)
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
