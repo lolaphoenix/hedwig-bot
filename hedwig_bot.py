@@ -383,30 +383,27 @@ EFFECT_LIBRARY["polyfail_cat"] = {
 # -------------------------
 # APPLY / REMOVE EFFECTS
 # -------------------------
-
 async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
-    # safety: ensure the effect exists in either library
+    # Fetch the effect definition from libraries
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name)
     if not effect_def:
         print(f"[Hedwig] Tried to apply unknown effect: {effect_name}")
         return
 
-    # Only Polyjuice & Alohomora have durations
+    # Determine expiration time if duration exists
     duration = effect_def.get("duration", 0)
-    expires_at = None
-    if duration and duration > 0:
-        expires_at = datetime.utcnow() + timedelta(seconds=duration)
+    expires_at = datetime.utcnow() + timedelta(seconds=duration) if duration > 0 else None
 
     uid = f"{effect_name}_{int(time.time())}"
 
-    emoji_custom = effect_def.get("emoji", "")
-    prefix_unicode = effect_def.get("prefix_unicode", "")
-    suffix_unicode = effect_def.get("suffix_unicode", "")
-
-    # Store clean nickname base once
+    # Initialize active effects storage for member if not present
     if member.id not in active_effects:
-        active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
+        active_effects[member.id] = {
+            "original_nick": member.display_name,
+            "effects": []
+        }
 
+    # Prepare effect entry
     entry = {
         "uid": uid,
         "effect": effect_name,
@@ -414,34 +411,29 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "source": source,
         "expires_at": expires_at.isoformat() if expires_at else None,
         **effect_def,
-        "prefix_custom": emoji_custom,
-        "prefix_unicode": prefix_unicode,
-        "suffix_unicode": suffix_unicode,
+        "prefix_custom": effect_def.get("emoji", ""),  # Custom emoji for display messages
+        "prefix_unicode": effect_def.get("prefix_unicode", ""),  # Unicode for nicknames
+        "suffix_unicode": effect_def.get("suffix_unicode", ""),
         "meta": meta or {}
     }
 
-    # Add role immediately if relevant
+    # Assign role if effect grants one
     role_id = entry.get("role_id")
     if role_id:
         role = member.guild.get_role(role_id)
         if role and role not in member.roles:
             await safe_add_role(member, role)
 
-    # Add to active effects
+    # Add to active effects and persist
     active_effects[member.id]["effects"].append(entry)
-
-    # Persist
     effects[str(member.id)] = active_effects[member.id]
     save_effects()
 
-    # schedule expiry and apply visible changes
-    if entry.get("kind") in ("potion_polyjuice", "role_alohomora"):
+    # Schedule expiration if applicable
+    if expires_at and entry.get("kind") in ("potion_polyjuice", "role_alohomora"):
         asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
 
-    await update_member_display(member)
-
-
-    # Update nickname/roles
+    # Update display (nickname and roles)
     await update_member_display(member)
 
 
@@ -453,6 +445,7 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     if member:
         await expire_effect(member, uid)
 
+
 async def expire_effect(member: discord.Member, uid: str):
     if member.id not in active_effects:
         effects.pop(str(member.id), None)
@@ -460,11 +453,17 @@ async def expire_effect(member: discord.Member, uid: str):
         return
 
     expired = next((e for e in active_effects[member.id]["effects"] if e["uid"] == uid), None)
+    if not expired:
+        print(f"[Hedwig] Tried to expire unknown effect uid {uid} for {member.display_name}")
+        return
+
+    # Remove effect from active_effects
     active_effects[member.id]["effects"] = [
         e for e in active_effects[member.id]["effects"] if e["uid"] != uid
     ]
 
-    if active_effects.get(member.id, {}).get("effects"):
+    # Clean data persistence
+    if active_effects[member.id]["effects"]:
         effects[str(member.id)] = active_effects[member.id]
     else:
         effects.pop(str(member.id), None)
@@ -472,92 +471,23 @@ async def expire_effect(member: discord.Member, uid: str):
 
     save_effects()
 
-    if expired:
-        role_id = expired.get("role_id")
-        if role_id:
-            role = member.guild.get_role(role_id)
-            if role and role in member.roles:
-                await safe_remove_role(member, role)
+    # Remove associated role if any
+    role_id = expired.get("role_id")
+    if role_id:
+        role = member.guild.get_role(role_id)
+        if role and role in member.roles:
+            await safe_remove_role(member, role)
 
-    # Debug prints to check the nickname cleaning
-    print(f"[Debug] Before cleaning nickname: {active_effects.get(member.id, {}).get('original_nick', member.display_name)}")
+    # Clean the original nickname of all Unicode emojis from effects
+    original_nick = active_effects.get(member.id, {}).get("original_nick", member.display_name)
+    clean_nick = strip_known_unicode(original_nick)
 
-    # Clean the original nickname base (remove all Unicode emojis from effects/potions)
-    clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
-
-    print(f"[Debug] After cleaning nickname: {clean_nick}")
-
-    # Update the stored original nickname for the user
+    # Update original nickname in active_effects
     if member.id in active_effects:
         active_effects[member.id]["original_nick"] = clean_nick
 
-    # Recompute and update the member's nickname on Discord
+    # Recompute and update display nickname and roles
     await update_member_display(member)
-
-async def recompute_nickname(member: discord.Member):
-    data = active_effects.get(member.id)
-    if not data:
-        return
-
-    base = data.get("original_nick", member.display_name)
-
-    # Apply effects in order (stackable)
-    for e in data["effects"]:
-        kind = e.get("kind")
-
-        if kind == "nickname":
-            prefix = e.get("prefix_unicode", "")
-            suffix = e.get("suffix_unicode", "")
-            base = f"{prefix}{base}{suffix}"
-
-        elif kind == "truncate":
-            length = e.get("length", 0)
-            if length and len(base) > length:
-                base = base[:-length]
-
-        elif kind == "role_lumos":
-            prefix = e.get("prefix_unicode", "")
-            if prefix:
-                base = f"{prefix}{base}"
-
-        elif kind and kind.startswith("potion_"):
-            prefix = e.get("prefix_unicode", "")
-            if prefix:
-                base = f"{prefix}{base}"
-
-    await set_nickname(member, base)
-
-
-async def update_member_display(member: discord.Member):
-    """Refresh nickname and roles from active effects."""
-    await recompute_nickname(member)
-
-    user_effects = active_effects.get(member.id, {}).get("effects", [])
-    for e in user_effects:
-        kind = e.get("kind")
-
-        if kind == "role_lumos":
-            role = member.guild.get_role(ROLE_IDS["lumos"])
-            if role:
-                await safe_add_role(member, role)
-
-        elif kind == "potion_amortentia":
-            rid = e.get("role_id")
-            role = member.guild.get_role(rid)
-            if role:
-                await safe_add_role(member, role)
-
-        elif kind == "role_alohomora":
-            role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-            if role:
-                await safe_add_role(member, role)
-
-        elif kind == "potion_polyjuice":
-            chosen = e.get("meta", {}).get("polyhouse")
-            if chosen and chosen in ROLE_IDS:
-                role = member.guild.get_role(ROLE_IDS[chosen])
-                if role:
-                    await safe_add_role(member, role)
 
 # -------------------------
 # ROOM / ALOHOMORA GAME HELPERS
