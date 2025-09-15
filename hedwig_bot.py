@@ -26,6 +26,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 OWLRY_CHANNEL_ID = 1410875871249829898
 ROOM_OF_REQUIREMENT_ID = 1413134135169646624
 GRINGOTTS_CHANNEL_ID = 1413047433016901743
+DUELING_CLUB_ID = 1417131924132069416
 
 # Role IDs (from you)
 ROLE_IDS = {
@@ -584,14 +585,14 @@ async def hedwighelp(ctx):
     msg = (
         "🦉 **Hedwig Help** 🦉\n"
         "✨ Student Commands:\n"
-        "`!shopspells` – View available spells\n"
-        "`!shoppotions` – View available potions\n"
-        "`!cast <spell> @user` – Cast a spell and include a target such as yourself or another person\n"
-        "`!drink <potion> @user` – Drink a potion and include a target such as yourself or another person\n"
+        "`!shopspells` – View available spells in Dueling Club\n"
+        "`!shoppotions` – View available potions in Dueling Club \n"
+        "`!cast <spell> @user` – Cast a spell and include a target such as yourself or another person in Dueling Club\n"
+        "`!drink <potion> @user` – Drink a potion and include a target such as yourself or another person in Dueling Club\n"
         "`!balance` – Check your galleons\n"
         "`!daily` – Collect your daily allowance\n"
         "`!points` – View house points\n"
-        "`!choose <1–5>` – Choose a potion in Room of Requirement\n"
+        "`!choose <1–5>` – Choose a potion in Room of Requirement to play the game.\n"
     )
     await ctx.send(msg)
 
@@ -710,6 +711,9 @@ async def leaderboard(ctx):
 # -------------------------
 @bot.command()
 async def shopspells(ctx):
+    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
+   
     msg = "🪄 **Spell Shop** 🪄\n\n"
     for name, data in EFFECT_LIBRARY.items():
         if name == "polyfail_cat":
@@ -724,6 +728,8 @@ async def shopspells(ctx):
 
 @bot.command()
 async def shoppotions(ctx):
+    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
     msg = "🍷 **Potion Shop** 🍷\n\n"
     for name, data in POTION_LIBRARY.items():
         if name == "polyfail_cat":
@@ -741,6 +747,8 @@ async def shoppotions(ctx):
 # -------------------------
 @bot.command()
 async def cast(ctx, spell: str, member: discord.Member):
+    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
     caster = ctx.author
     spell = spell.lower()
 
@@ -762,14 +770,25 @@ async def cast(ctx, spell: str, member: discord.Member):
 
     # Finite: remove most recent effect
     if spell == "finite":
-        remove_galleons_local(caster.id, cost)
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
             return await ctx.send("❌ That user has no active spells/potions to finite.")
 
         effects_list = active_effects[member.id]["effects"]
-        entry = effects_list[-1]  # remove the most recent
+        entry = effects_list[-1]
+        effect_name = entry.get("effect")
+
+        # Check if the last spell was Alohomora
+        if effect_name == "alohomora":
+            add_galleons_local(caster.id, cost)
+            return await ctx.send(f"🪄 The spell bounces back! You cannot use Finite on Alohomora. {caster.display_name} got their {cost} galleons back.")
+
+        # Check if the last effect was a potion
+        if effect_name in POTION_LIBRARY:
+            return await ctx.send(f"✂️ Finite can only be used on spells, not potions.")
+        
+        remove_galleons_local(caster.id, cost)
         await expire_effect(member, entry["uid"])
-        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{entry['effect']}**.")
+        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{effect_name}**.")
 
     # Alohomora starts the potion game
     if spell == "alohomora":
@@ -789,6 +808,9 @@ async def cast(ctx, spell: str, member: discord.Member):
 # -------------------------
 @bot.command()
 async def drink(ctx, potion: str, member: discord.Member = None):
+    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
+
     potion = potion.lower()
     member = member or ctx.author
     caster = ctx.author
@@ -801,24 +823,34 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to buy that potion!")
 
-    # Polyjuice: prevent stacking
+    # Check for the 24-hour cooldown on Polyjuice
     if pd.get("kind") == "potion_polyjuice":
-        if member.id in active_effects and any(e.get("effect") == "polyjuice" for e in active_effects[member.id]["effects"]):
-            return await ctx.send("You try to imbibe another Polyjuice, but can't get it down. 🤢 No galleons have been spent. Try again later.")
+        polyjuice_effect = next((e for e in active_effects.get(member.id, {}).get("effects", [])
+                                 if e.get("effect") == "polyjuice"), None)
 
+        if polyjuice_effect:
+            expires_at = datetime.fromisoformat(polyjuice_effect["expires_at"])
+            # Check if the effect has expired. If it hasn't, the user is still in the cooldown period.
+            if datetime.utcnow() < expires_at:
+                remaining_time = expires_at - datetime.utcnow()
+                hours, remainder = divmod(remaining_time.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                return await ctx.send(f"You try to imbibe another Polyjuice, but can't get it down. 🤢 You must wait {hours} hours, {minutes} minutes, and {seconds} seconds before you can drink it again.")
+
+    # Remove galleons after cooldown check passes
     remove_galleons_local(caster.id, cost)
 
     # Bezoar (cleanse potions only)
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
             to_remove = [e["uid"] for e in active_effects[member.id]["effects"]
-                         if (e.get("kind") or "").startswith("potion_") or e.get("effect") in POTION_LIBRARY]
+                         if (e.get("kind") or "").startswith("potion_") and e.get("effect") not in ("polyjuice", "polyfail_cat")]
             for uid in to_remove:
                 await expire_effect(member, uid)
         await ctx.send(f"🧪 {caster.display_name} used Bezoar on {member.display_name}. Potion effects removed.")
         return
 
-    # Polyjuice special-handling (24h only)
+    # Polyjuice special-handling
     if pd["kind"] == "potion_polyjuice":
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
