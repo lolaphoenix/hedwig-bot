@@ -121,6 +121,10 @@ POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 EFFECTS_FILE = os.path.join(DATA_DIR, "effects.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 
+# in-memory state (will be loaded on start)
+galleons = {}                          # int_user_id -> int
+house_points = {h: 0 for h in house_emojis}
+
 # -------------------------
 # PERSISTENCE FUNCTIONS
 # -------------------------
@@ -192,7 +196,6 @@ def save_effects():
     with open(EFFECTS_FILE, "w") as f:
         json.dump(effects, f, indent=4)
 
-
 def load_duel_cooldowns():
     global duel_cooldowns
     try:
@@ -220,6 +223,16 @@ def save_duel_cooldowns():
         os.replace(tmp, DUEL_COOLDOWNS_FILE)
     except Exception as e:
         print(f"[Hedwig] Failed to save duel cooldowns: {e}")
+
+# -------------------------
+# STATE (OTHER IN-MEMORY)
+# -------------------------
+last_daily = {}          # user_id -> datetime
+active_effects = {}      # user_id -> {"original_nick": str, "effects": [ ... ]}
+active_potions = {}      # user_id -> {"winning": int, "chosen": bool, "started_by": id}
+
+alohomora_cooldowns = {} # target_user_id -> datetime
+
 
 # -------------------------
 # HELPERS
