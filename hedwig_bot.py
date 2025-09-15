@@ -15,9 +15,7 @@ from datetime import datetime, timedelta
 # -------------------------
 # CONFIG / SETUP
 # -------------------------
-# New code to ensure the bot can always find its .env file
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BOT_DIR, '.env'))
+load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -47,20 +45,30 @@ ROLE_IDS = {
 }
 ALOHOMORA_ROLE_NAME = "Alohomora"
 
-# Emojis and Mappings
+# Dueling
+duels = {}
+DUEL_TIMER = 30
+DUEL_REACTIONS = ["🛡️", "⚔️"]
+DUELLISTS = ["duelist_one", "duelist_two"]
+
+# Potion emojis
 POTION_EMOJIS = [
     "<:potion1:1413860131073953856>",
     "<:potion2:1413860185801490463>",
     "<:potion3:1413860235382231202>",
     "<:potion4:1413860291124531220>",
-    "<:potion5:1413680696985442334>",
+    "<:potion5:1413860345055019201>",
 ]
+
+# House emojis
 house_emojis = {
     "gryffindor": "<:gryffindor:1398846272114524300>",
     "slytherin": "<:slytherin:1398846083463122984>",
     "ravenclaw": "<:ravenclaw:1398846388430835752>",
     "hufflepuff": "<:hufflepuff:1409203862757310534>",
 }
+
+# Custom effect emoji mappings
 effect_emojis = {
     "tarantallegra": "<:tarantallegra:1415595049411936296>",
     "serpensortia": "<:serpensortia:1415595048124289075>",
@@ -76,9 +84,12 @@ effect_emojis = {
     "bezoar": "<:bezoar:1415594792217350255>",
     "felixfelicis": "<:felixfelicis:1413679761036673186>",
     "draughtlivingdeath": "<:draughtoflivingdeath:1413679622041894985>",
+    "amortentia": "<:amortentia:1413679525178380369>",
     "polyjuice": "<:polyjuice:1413679815520944158>",
     "finite": "✂️"
 }
+
+# Optional unicode versions (for nicknames, etc.)
 effect_unicode = {
     "tarantallegra": "💃",
     "serpensortia": "🐍",
@@ -94,40 +105,27 @@ effect_unicode = {
     "bezoar": "💊",
     "felixfelicis": "🍀",
     "draughtlivingdeath": "💀",
+    "amortentia": "💖",
     "polyjuice": "🧪",
     "finite": "✂️"
 }
 
-# In-memory State
-galleons = {}
-house_points = {h: 0 for h in house_emojis}
-effects = {}
-active_effects = {}
-active_duels = {}
-duel_cooldowns = {}
-last_daily = {}
-active_potions = {}
-alohomora_cooldowns = {}
-
 # -------------------------
 # PERSISTENCE: data files
 # -------------------------
+effects = {}  # {user_id: {"effect": str, "expires": timestamp}}
+EFFECTS_FILE = "effects.json"
 try:
     DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 except NameError:
     DATA_DIR = os.path.join(os.getcwd(), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
-
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
 POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
-EFFECTS_FILE = os.path.join(DATA_DIR, "effects.json")
-DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 
-# -------------------------
-# PERSISTENCE FUNCTIONS
-# -------------------------
-# These functions must be defined *after* the file variables above
-# so they can be referenced without a NameError.
+# in-memory state (will be loaded on start)
+galleons = {}                          # int_user_id -> int
+house_points = {h: 0 for h in house_emojis}
 
 # --- galleons persistence ---
 def load_galleons():
@@ -184,6 +182,11 @@ def save_house_points():
     except Exception as e:
         print("[Hedwig] Failed to save house points:", e)
 
+
+# -------------------------
+# Persistence Functions
+# -------------------------
+
 def load_effects():
     global effects
     try:
@@ -196,48 +199,19 @@ def save_effects():
     with open(EFFECTS_FILE, "w") as f:
         json.dump(effects, f, indent=4)
 
-def load_duel_cooldowns():
-    global duel_cooldowns
-    try:
-        if os.path.exists(DUEL_COOLDOWNS_FILE):
-            with open(DUEL_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            # Convert string keys back to int and isoformat back to datetime
-            duel_cooldowns = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
-            print(f"[Hedwig] loaded {len(duel_cooldowns)} duel cooldowns.")
-        else:
-            duel_cooldowns = {}
-            save_duel_cooldowns()
-            print(f"[Hedwig] created new duel cooldowns file.")
-    except Exception as e:
-        print(f"[Hedwig] Failed to load duel cooldowns: {e}")
-        duel_cooldowns = {}
-
-def save_duel_cooldowns():
-    try:
-        tmp = DUEL_COOLDOWNS_FILE + ".tmp"
-        # Convert datetime objects to ISO format strings for JSON
-        serializable = {str(k): v.isoformat() for k, v in duel_cooldowns.items()}
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(serializable, f, indent=2)
-        os.replace(tmp, DUEL_COOLDOWNS_FILE)
-    except Exception as e:
-        print(f"[Hedwig] Failed to save duel cooldowns: {e}")
 
 # -------------------------
 # STATE (OTHER IN-MEMORY)
 # -------------------------
-last_daily = {}          # user_id -> datetime
-active_effects = {}      # user_id -> {"original_nick": str, "effects": [ ... ]}
-active_potions = {}      # user_id -> {"winning": int, "chosen": bool, "started_by": id}
+last_daily = {}           # user_id -> datetime
+active_effects = {}       # user_id -> {"original_nick": str, "effects": [ ... ]}
+active_potions = {}       # user_id -> {"winning": int, "chosen": bool, "started_by": id}
 
-alohomora_cooldowns = {} # target_user_id -> datetime
-
+alohomora_cooldowns = {}    # target_user_id -> datetime
 
 # -------------------------
 # HELPERS
 # -------------------------
-
 def now_utc():
     return datetime.utcnow()
 
@@ -302,154 +276,116 @@ def get_user_house(member: discord.Member):
 # -------------------------
 # LIBRARIES
 # -------------------------
-
 EFFECT_LIBRARY = {
     "aguamenti": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:aguamenti:1415595031644999742>", "prefix_unicode": "🌊",
-        "suffix": "<:aguamenti:1415595031644999742>", "suffix_unicode": "🌊",
+        "cost": 20,
+        "kind": "nickname",
+        "prefix": "<:aguamenti:1415595031644999742>",
+        "prefix_unicode": "🌊",
+        "suffix": "<:aguamenti:1415595031644999742>",
+        "suffix_unicode": "🌊",
         "description": "Surrounds the target's nickname with water."
     },
     "confundo": {
-        "cost": 25, "kind": "nickname",
-        "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ",
-        "suffix": "", "suffix_unicode": "❓",
+        "cost": 25,
+        "kind": "nickname",
+        "prefix": "<:confundo:1415595034769625199>",
+        "prefix_unicode": "❓CONFUNDED - ",
+        "suffix": "",
+        "suffix_unicode": "❓",
         "description": "Prefixes CONFUNDED to the target's nickname."
     },
     "diffindo": {
-        "cost": 30, "kind": "truncate",
+        "cost": 30,
+        "kind": "truncate",
         "length": 5,
         "description": "Removes the last 5 characters of the target's nickname."
     },
     "ebublio": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:ebublio:1415595038397693982>", "prefix_unicode": "🫧",
-        "suffix": "<:ebublio:1415595038397693982>", "suffix_unicode": "🫧",
+        "cost": 20,
+        "kind": "nickname",
+        "prefix": "<:ebublio:1415595038397693982>",
+        "prefix_unicode": "🫧",
+        "suffix": "<:ebublio:1415595038397693982>",
+        "suffix_unicode": "🫧",
         "description": "Surrounds the target's nickname with bubbles."
     },
     "herbifors": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:herbifors:1415595039882481674>", "prefix_unicode": "🌸",
-        "suffix": "<:herbifors:1415595039882481674>", "suffix_unicode": "🌸",
+        "cost": 20,
+        "kind": "nickname",
+        "prefix": "<:herbifors:1415595039882481674>",
+        "prefix_unicode": "🌸",
+        "suffix": "<:herbifors:1415595039882481674>",
+        "suffix_unicode": "🌸",
         "description": "Gives the target a floral nickname."
     },
     "serpensortia": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:serpensortia:1415595048124289075>", "prefix_unicode": "🐍",
-        "suffix": "<:serpensortia:1415595048124289075>", "suffix_unicode": "🐍",
+        "cost": 20,
+        "kind": "nickname",
+        "prefix": "<:serpensortia:1415595048124289075>",
+        "prefix_unicode": "🐍",
+        "suffix": "<:serpensortia:1415595048124289075>",
+        "suffix_unicode": "🐍",
         "description": "Surrounds the target's nickname with snake emojis."
     },
     "tarantallegra": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:tarantallegra:1415595049411936296>", "prefix_unicode": "💃",
-        "suffix": "<:tarantallegra:1415595049411936296>", "suffix_unicode": "💃",
-        "description": "Adds dancing emojis around the target's nickname."
-    },
-    "incendio": {
-        "cost": 25, "kind": "nickname",
-        "prefix": "<:incendio:1415595041191235718>", "prefix_unicode": "🔥",
-        "suffix": "<:incendio:1415595041191235718>", "suffix_unicode": "🔥",
-        "description": "Adds flames to the target's nickname."
+        "cost": 20,
+        "kind": "nickname",
+        "prefix": "<:tarantallegra:1415595049411936296>",
+        "prefix_unicode": "💃",
+        "suffix": "<:tarantallegra:1415595049411936296>",
+        "suffix_unicode": "💃",
+        "description": "Surrounds the target's nickname with dancing emojis."
     },
     "alohomora": {
-        "cost": 50, "kind": "role_alohomora", "duration": 86400, "description": "Grants access to the Room of Requirement for 24 hours and starts the potion game."
+        "cost": 20,
+        "kind": "role",
+        "role": ALOHOMORA_ROLE_NAME,
+        "description": "Gives the target the 'Alohomora' role for a short period."
     },
     "lumos": {
-        "cost": 15, "kind": "role_lumos", "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐", "suffix_unicode": "⭐", "description": "Gives the Lumos role and a star prefix to the nickname."
+        "cost": 20,
+        "kind": "role",
+        "role_id": ROLE_IDS["lumos"],
+        "description": "Gives the target the 'Lumos' role for a short period."
     },
-    "finite": {
-        "cost": 10, "kind": "finite", "duration": 0, "description": "Finite: removes the most recent spell/potion from a user when cast."
-    },
-}
-POTION_LIBRARY = {
-    "felixfelicis": {
-        "emoji": "<:felixfelicis:1413679761036673186>",
-        "cost": 60,
-        "kind": "potion_luck_good",
-        "prefix": "<:felixfelicis:1414255673973280909>",
-        "prefix_unicode": "🍀",
-        "duration": 3600,
-        "description": "Good luck potion.",
-    },
-    "draughtoflivingdeath": {
-        "emoji": "<:draughtoflivingdeath:1413679622041894985>",
-        "cost": 60,
-        "kind": "potion_luck_bad",
-        "prefix": "<:draughtoflivingdeath:1413679622041894985>",
-        "prefix_unicode": "💀",
-        "duration": 3600,
-        "description": "Bad luck potion.",
-    },
-    "polyjuice": {
-        "emoji": "<:polyjuice:1413679815520944158>",
-        "cost": 60,
-        "kind": "potion_house_change",
-        "prefix": "<:polyjuice:1413679815520944158>",
-        "prefix_unicode": "🧪",
-        "description": "Changes the target's house.",
-        "duration": 3600,
-    },
-    "amortentia": {
-        "emoji": "<:amortentia:1414255673973280909>",
-        "cost": 60,
-        "kind": "potion_staff_allow",
-        "prefix": "<:amortentia:1414255673973280909>",
-        "prefix_unicode": "💖",
-        "description": "Allows non-staff members to use staff commands for one hour.",
-        "duration": 3600,
+    "incendio": {
+        "cost": 30,
+        "kind": "nickname",
+        "prefix": "<:incendio:1415595041191235718> ",
+        "prefix_unicode": "🔥",
+        "suffix": " <:incendio:1415595041191235718>",
+        "suffix_unicode": "🔥",
+        "description": "Surrounds the target's nickname with fire."
     },
 }
 
+
 # -------------------------
-# BOT COMMANDS
+# BOT EVENTS
 # -------------------------
 
 @bot.event
 async def on_ready():
-    """Bot initialization when connected to Discord."""
-    print("--------------------")
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    print("--------------------")
-    # A single guild is likely
-    if bot.guilds:
-        print(f"Connected to guild: {bot.guilds[0].name}")
-    else:
-        print("Not connected to any guilds!")
-    
-    # Load persistence files
+    """Bot initialization event."""
+    print(f"[Hedwig] Logged in as {bot.user}")
+
+    # Load data from disk
     load_galleons()
     load_house_points()
     load_effects()
-    load_duel_cooldowns()
-    
-    # Start cleanup task
-    if not cleanup_effects.is_running():
-        cleanup_effects.start()
-    
-    # Restore roles and nicknames for any lingering effects
-    print("[Hedwig] Checking for active effects on members...")
-    for uid, data in list(effects.items()):
+
+    # Restore all active effects from disk
+    new_effects = {}
+    for uid, data in effects.items():
         member = get_member_from_id(int(uid))
         if not member:
-            print(f"Member with ID {uid} not found. Skipping effect restoration.")
+            print(f"user {uid} not found. skipping effect restoration.")
             continue
-
         try:
-            active_effects[member.id] = data
-            for e in data["effects"]:
-                if "role_alohomora" in e["kind"]:
-                    role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-                    if role:
-                        await safe_add_role(member, role)
-                
-                if "role_lumos" in e["kind"]:
-                    role = discord.utils.get(member.guild.roles, id=ROLE_IDS["lumos"])
-                    if role:
-                        await safe_add_role(member, role)
-                
-                # Restore nickname prefix if it exists
-                if data["original_nick"] and "prefix_unicode" in EFFECT_LIBRARY.get(e["name"], {}):
-                    await set_nickname(member, f"{EFFECT_LIBRARY[e['name']]['prefix_unicode']} {data['original_nick']}")
+            # Reapply all effects to the user from the saved state.
+            for e in data.get("effects", []):
+                await add_effect(member, e["effect"], restore=True, uid=e["uid"])
         except Exception as err:
             print(f"Error restoring effect for {member.display_name}: {err}")
 
@@ -467,10 +403,221 @@ async def on_ready():
 
     print(f"[Hedwig] Logged in as {bot.user}")
 
+    cleanup_effects.start()
+    await bot.change_presence(activity=discord.Game(name="with spells! Type !help"))
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ DISCORD_TOKEN is missing from your .env file!")
+
+# -------------------------
+# Dueling Functionality
+# -------------------------
+def find_user_by_mention(guild, mention_str):
+    """Find a member in the guild by their mention string."""
+    try:
+        user_id = int(mention_str.replace('<@', '').replace('>', '').replace('!', ''))
+        return guild.get_member(user_id)
+    except (ValueError, IndexError):
+        return None
+
+async def start_duel(ctx, opponent):
+    if duels.get(ctx.author.id) or duels.get(opponent.id):
+        await ctx.send("One of you is already in a duel! Please finish it first.")
+        return False
+    if ctx.author.id == opponent.id:
+        await ctx.send("You can't duel yourself!")
+        return False
+
+    duel_id = uuid.uuid4().hex
+    duels[duel_id] = {
+        "players": [ctx.author.id, opponent.id],
+        "messages": [],
+        "channel": ctx.channel.id,
+        "expires_at": time.time() + DUEL_TIMER,
+        "winner": None
+    }
+    duels[ctx.author.id] = duel_id
+    duels[opponent.id] = duel_id
+    return True
+
+async def end_duel(duel_id):
+    duel = duels.get(duel_id)
+    if not duel:
+        return
+
+    # Clean up from the global state
+    for player_id in duel["players"]:
+        duels.pop(player_id, None)
+    duels.pop(duel_id, None)
+
+    # Clean up messages
+    channel = bot.get_channel(duel["channel"])
+    if channel:
+        for msg_id in duel["messages"]:
+            try:
+                msg = await channel.fetch_message(msg_id)
+                await msg.delete()
+            except discord.NotFound:
+                continue
+
+async def handle_duel_message(message):
+    duel_id = duels.get(message.author.id)
+    if not duel_id:
+        return
+
+    duel = duels[duel_id]
+    if message.channel.id != duel["channel"]:
+        return
+
+    if message.author.id not in duel["players"]:
+        return
+
+    duel["messages"].append(message.id)
+    duel["expires_at"] = time.time() + DUEL_TIMER
+
+
+@bot.command(name="duel")
+async def duel(ctx, opponent_mention=None):
+    if ctx.channel.id != DUELING_CLUB_ID:
+        await ctx.send(f"Duels must take place in the Dueling Club channel! <#{DUELING_CLUB_ID}>")
+        return
+
+    if not opponent_mention:
+        await ctx.send("You must mention someone to duel! e.g. `!duel @user`")
+        return
+
+    opponent = find_user_by_mention(ctx.guild, opponent_mention)
+    if not opponent:
+        await ctx.send("That user wasn't found.")
+        return
+
+    if not await start_duel(ctx, opponent):
+        return
+
+    duel_id = duels[ctx.author.id]
+    p1 = ctx.author
+    p2 = opponent
+
+    msg = await ctx.send(f"A duel has been initiated between {p1.mention} and {p2.mention}!")
+    duels[duel_id]["messages"].append(msg.id)
+
+    # Initial prompt
+    msg = await ctx.send(f"⚔️ {p1.mention} and {p2.mention}, react to this message to cast your spell! First to react wins!")
+    duels[duel_id]["messages"].append(msg.id)
+
+    def check(reaction, user):
+        return user.id in duel["players"] and str(reaction.emoji) in DUEL_REACTIONS
+
+    try:
+        reaction, user = await bot.wait_for('reaction_add', timeout=DUEL_TIMER, check=check)
+        winner = user
+        loser = p1 if winner == p2 else p2
+
+        # Winner gets a random effect and galleons
+        effect_name, effect_info = random.choice(list(EFFECT_LIBRARY.items()))
+        await add_effect(winner, effect_name)
+        add_galleons_local(winner.id, 50)
+        await ctx.send(f"⚡ {winner.mention} casts a spell and wins the duel! They have been awarded 50 galleons and the **{effect_name.title()}** effect! 🪄")
+        await end_duel(duel_id)
+
+    except asyncio.TimeoutError:
+        await ctx.send("Duel timed out! No one won.")
+        await end_duel(duel_id)
+
+    except Exception as e:
+        print(f"Error in duel: {e}")
+        await ctx.send("An unexpected error occurred during the duel.")
+        await end_duel(duel_id)
+
+
+# -------------------------
+# EFFECT FUNCTIONALITY
+# -------------------------
+
+async def add_effect(member: discord.Member, effect_name: str, duration: timedelta = timedelta(minutes=15), restore: bool = False, uid: str = None):
+    """Applies a spell effect to a member."""
+    if not uid:
+        uid = make_effect_uid()
+
+    effect = EFFECT_LIBRARY.get(effect_name)
+    if not effect:
+        return
+
+    if member.id not in active_effects:
+        active_effects[member.id] = {
+            "original_nick": member.display_name,
+            "effects": []
+        }
+    
+    current_effects = active_effects[member.id]["effects"]
+    current_effects.append({
+        "effect": effect_name,
+        "expires_at": (now_utc() + duration).isoformat(),
+        "uid": uid
+    })
+    
+    effects[str(member.id)] = active_effects[member.id]
+    save_effects()
+
+    kind = effect.get("kind")
+    if kind == "nickname":
+        # Apply the visual nickname effect
+        new_nick = active_effects[member.id]["original_nick"]
+        prefix = effect.get("prefix_unicode", "")
+        suffix = effect.get("suffix_unicode", "")
+        new_nick = f"{prefix}{new_nick}{suffix}"
+        
+        await set_nickname(member, new_nick)
+    
+    elif kind == "role":
+        # Apply the role effect
+        role_name = effect.get("role")
+        role_id = effect.get("role_id")
+        
+        role = discord.utils.get(member.guild.roles, id=role_id)
+        if not role and role_name:
+            role = discord.utils.get(member.guild.roles, name=role_name)
+        
+        if role:
+            await safe_add_role(member, role)
+            
+    elif kind == "truncate":
+        original_nick = active_effects[member.id]["original_nick"]
+        length = effect.get("length", 1)
+        new_nick = original_nick[:-length]
+        await set_nickname(member, new_nick)
+
+async def remove_effect(member: discord.Member, uid: str):
+    """Removes a specific effect and reverts a member's name/roles if no other effects remain."""
+    if member.id not in active_effects:
+        return
+
+    user_effects = active_effects[member.id]["effects"]
+    user_effects = [e for e in user_effects if e["uid"] != uid]
+    active_effects[member.id]["effects"] = user_effects
+
+    # Check if there are any effects left
+    if not user_effects:
+        # No more effects, revert to original nickname and remove special roles
+        try:
+            await set_nickname(member, active_effects[member.id]["original_nick"])
+        except Exception as e:
+            print(f"Could not restore original nickname for {member}: {e}")
+
+        # Revert special roles
+        for role_id in (ROLE_IDS["lumos"], ROLE_IDS["amortentia"]):
+            role = discord.utils.get(member.guild.roles, id=role_id)
+            if role:
+                await safe_remove_role(member, role)
+        
+        # Remove the alohomora role if it exists
+        alohomora_role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+        if alohomora_role:
+            await safe_remove_role(member, alohomora_role)
+
+        # Clean up the in-memory state
+        del active_effects[member.id]
+        
+    save_effects()
+
 
 # -------------------------
 # Background Tasks
@@ -495,276 +642,18 @@ async def cleanup_effects():
                 new_effects.append(e)
 
         if not new_effects:
-            # All effects for this user have expired, so remove them
-            del effects[uid]
+            effects.pop(uid, None)
         else:
-            effects[uid]["effects"] = new_effects
+            data["effects"] = new_effects
 
     if expired:
         save_effects()
 
-    # --- check for expired alohomora cooldowns ---
-    now_ts = time.time()
-    to_remove = []
-    for user_id, expiry in alohomora_cooldowns.items():
-        if now_utc() >= expiry:
-            to_remove.append(user_id)
-
-    for user_id in to_remove:
-        del alohomora_cooldowns[user_id]
-        print(f"[Hedwig] Alohomora cooldown expired for user {user_id}")
-
-
-# -------------------------
-# User Commands
-# -------------------------
-@bot.command()
-async def balance(ctx):
-    """Checks your galleon balance."""
-    user_id = ctx.author.id
-    balance = get_balance(user_id)
-    await ctx.send(f"{ctx.author.mention}, you have {balance} galleons.")
-
-
-@bot.command()
-async def points(ctx):
-    """Checks the house points."""
-    msg = "**House Points**\n"
-    sorted_points = sorted(house_points.items(), key=lambda item: item[1], reverse=True)
-    for house, points in sorted_points:
-        emoji = house_emojis.get(house, "")
-        msg += f"{emoji} {house.capitalize()}: {points}\n"
-    await ctx.send(msg)
-
-
-# --- Staff commands ---
-
-@bot.command()
-async def award(ctx, member: discord.Member, amount: int, *, reason: str = ""):
-    """Awards a member galleons (Staff only)."""
-    if not is_staff_allowed(ctx.author):
-        return await ctx.send("You do not have permission to use this command.")
-
-    add_galleons_local(member.id, amount)
-    await ctx.send(f"Awarded {amount} galleons to {member.mention}. Reason: {reason}")
-
-
-@bot.command()
-async def deduct(ctx, member: discord.Member, amount: int, *, reason: str = ""):
-    """Deducts galleons from a member (Staff only)."""
-    if not is_staff_allowed(ctx.author):
-        return await ctx.send("You do not have permission to use this command.")
-
-    remove_galleons_local(member.id, amount)
-    await ctx.send(f"Deducted {amount} galleons from {member.mention}. Reason: {reason}")
-
-
-@bot.command()
-async def award_house(ctx, house: str, amount: int, *, reason: str = ""):
-    """Awards house points to a house (Staff only)."""
-    if not is_staff_allowed(ctx.author):
-        return await ctx.send("You do not have permission to use this command.")
-
-    house = house.lower()
-    if house not in house_points:
-        return await ctx.send("Invalid house name.")
-
-    house_points[house] += amount
-    save_house_points()
-    await ctx.send(f"Awarded {amount} points to {house.capitalize()}. Reason: {reason}")
-
-
-@bot.command()
-async def deduct_house(ctx, house: str, amount: int, *, reason: str = ""):
-    """Deducts house points from a house (Staff only)."""
-    if not is_staff_allowed(ctx.author):
-        return await ctx.send("You do not have permission to use this command.")
-
-    house = house.lower()
-    if house not in house_points:
-        return await ctx.send("Invalid house name.")
-
-    house_points[house] -= amount
-    save_house_points()
-    await ctx.send(f"Deducted {amount} points from {house.capitalize()}. Reason: {reason}")
-
-
-@bot.command()
-async def staff_list(ctx):
-    """Lists all staff members (Staff only)."""
-    if not is_staff_allowed(ctx.author):
-        return await ctx.send("You do not have permission to use this command.")
-
-    staff_roles = [ROLE_IDS["head_of_house"], ROLE_IDS["prefects"]]
-    staff_members = []
-    for role_id in staff_roles:
-        role = ctx.guild.get_role(role_id)
-        if role:
-            staff_members.extend(role.members)
-
-    msg = "**Staff Members**\n"
-    for member in set(staff_members):
-        msg += f"- {member.mention} ({member.display_name})\n"
-    await ctx.send(msg)
-
-
-# --- Potions & Effects ---
-
-@bot.command()
-async def potion(ctx, name: str):
-    """Starts a potion game for a potion."""
-    name = name.lower()
-    if name not in POTION_LIBRARY:
-        return await ctx.send("That's not a recognized potion.")
-
-    if ctx.author.id in active_potions:
-        return await ctx.send("You already have an active potion brewing!")
-
-    potion_info = POTION_LIBRARY[name]
-    cost = potion_info["cost"]
-    if get_balance(ctx.author.id) < cost:
-        return await ctx.send(f"You don't have enough galleons to brew {name}! It costs {cost}.")
-
-    add_galleons_local(ctx.author.id, -cost)
-    active_potions[ctx.author.id] = {
-        "winning": random.randint(1, 5),
-        "chosen": False,
-        "started_by": ctx.author.id,
-        "potion_name": name,
-    }
-    await ctx.send(
-        f"{ctx.author.mention} has started brewing a {name} potion for {cost} galleons. "
-        "Choose a number 1-5 with `!choose <number>` to get a random result!"
-    )
-
-
-@bot.command()
-async def choose(ctx, number: int):
-    """Chooses a number for the active potion game."""
-    if ctx.author.id not in active_potions:
-        return await ctx.send("You don't have an active potion brewing. Use `!potion <name>` to start one.")
-
-    if active_potions[ctx.author.id]["chosen"]:
-        return await ctx.send("You've already made your choice for this potion.")
-
-    if not 1 <= number <= 5:
-        return await ctx.send("Please choose a number between 1 and 5.")
-
-    active_potions[ctx.author.id]["chosen"] = True
-    winning_number = active_potions[ctx.author.id]["winning"]
-    potion_name = active_potions[ctx.author.id]["potion_name"]
-
-    if number == winning_number:
-        await ctx.send(f"✨ You chose wisely! The potion works! Applying {potion_name} effect...")
-        if potion_name == "alohomora":
-            # The alohomora effect is a special role, not a nickname effect
-            role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
-            if role:
-                await safe_add_role(ctx.author, role)
-                alohomora_cooldowns[ctx.author.id] = now_utc() + timedelta(days=1)
-                await ctx.send(f"The `Alohomora` spell has been cast! {ctx.author.mention} can now access the Room of Requirement for 24 hours.")
-        else:
-            await apply_effect(ctx, ctx.author, potion_name)
-    else:
-        await ctx.send(f"💥 The potion didn't work. The winning number was {winning_number}.")
-
-    del active_potions[ctx.author.id]
-
-
-@bot.command()
-async def cast(ctx, effect_name: str, target: discord.Member):
-    """Casts a spell effect on a user."""
-    effect_name = effect_name.lower()
-    if effect_name not in EFFECT_LIBRARY:
-        return await ctx.send("That's not a recognized spell.")
-
-    caster_id = ctx.author.id
-    target_id = target.id
-
-    if get_balance(caster_id) < EFFECT_LIBRARY[effect_name]["cost"]:
-        return await ctx.send(f"You don't have enough galleons to cast {effect_name}!")
-
-    if effect_name == "alohomora":
-        await ctx.send("Alohomora is a potion, not a spell. Use `!potion alohomora` instead.")
-        return
-
-    add_galleons_local(caster_id, -EFFECT_LIBRARY[effect_name]["cost"])
-    await apply_effect(ctx, target, effect_name)
-
-
-async def apply_effect(ctx, target: discord.Member, effect_name: str):
-    effect_info = EFFECT_LIBRARY[effect_name]
-    uid = make_effect_uid()
-    expires_at = (datetime.utcnow() + timedelta(minutes=60)).isoformat() # default 1 hr
-
-    if target.id not in active_effects:
-        active_effects[target.id] = {
-            "original_nick": target.display_name,
-            "effects": [],
-        }
-
-    active_effects[target.id]["effects"].append({
-        "uid": uid,
-        "name": effect_name,
-        "kind": effect_info["kind"],
-        "expires_at": expires_at,
-    })
-    save_effects()
-
-    kind = effect_info["kind"]
-
-    if kind == "nickname":
-        prefix = effect_info.get("prefix_unicode", "")
-        suffix = effect_info.get("suffix_unicode", "")
-        new_nick = f"{prefix} {active_effects[target.id]['original_nick']} {suffix}"
-        await set_nickname(target, new_nick.strip())
-        await ctx.send(f"Applied {effect_name} to {target.mention}!")
-
-    elif kind == "truncate":
-        length = effect_info["length"]
-        original_nick = active_effects[target.id]['original_nick']
-        new_nick = original_nick[:len(original_nick) - length]
-        await set_nickname(target, new_nick)
-        await ctx.send(f"Applied {effect_name} to {target.mention}!")
-
-    elif kind == "role_lumos":
-        role = discord.utils.get(ctx.guild.roles, id=ROLE_IDS["lumos"])
-        if role:
-            await safe_add_role(target, role)
-            await set_nickname(target, f"{effect_info['prefix_unicode']} {active_effects[target.id]['original_nick']}")
-            await ctx.send(f"Applied {effect_name} to {target.mention}!")
-
-    elif kind == "finite":
-        if target.id not in active_effects or not active_effects[target.id]["effects"]:
-            await ctx.send(f"There are no active effects to remove from {target.mention}.")
-            return
-
-        effects_to_remove = active_effects[target.id]["effects"]
-        last_effect = effects_to_remove.pop()
-
-        if last_effect["kind"] == "role_alohomora":
-            alohomora_role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
-            if alohomora_role and alohomora_role in target.roles:
-                await safe_remove_role(target, alohomora_role)
-
-        elif last_effect["kind"] == "role_lumos":
-            lumos_role = discord.utils.get(ctx.guild.roles, id=ROLE_IDS["lumos"])
-            if lumos_role and lumos_role in target.roles:
-                await safe_remove_role(target, lumos_role)
-
-        if not effects_to_remove:
-            original_nick = active_effects[target.id]["original_nick"]
-            await set_nickname(target, original_nick)
-            del active_effects[target.id]
-        else:
-            active_effects[target.id]["effects"] = effects_to_remove
-            await set_nickname(target, f"{EFFECT_LIBRARY[effects_to_remove[-1]['name']]['prefix_unicode']} {active_effects[target.id]['original_nick']}")
-        
-        save_effects()
-        await ctx.send(f"Successfully removed the last effect from {target.mention}!")
-    
-    else:
-        await ctx.send("Effect kind not implemented.")
+    for user_id, effect_uid in expired:
+        member = get_member_from_id(int(user_id))
+        if member:
+            await remove_effect(member, effect_uid)
+            print(f"Removed expired effect {effect_uid} from {member.display_name}")
 
 
 # -------------------------
