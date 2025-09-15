@@ -48,7 +48,6 @@ ALOHOMORA_ROLE_NAME = "Alohomora"
 # Dueling
 duels = {}
 DUEL_TIMER = 30
-DUEL_REACTIONS = ["🛡️", "⚔️"]
 DUELLISTS = ["duelist_one", "duelist_two"]
 
 # Potion emojis
@@ -432,7 +431,8 @@ async def start_duel(ctx, opponent):
         "messages": [],
         "channel": ctx.channel.id,
         "expires_at": time.time() + DUEL_TIMER,
-        "winner": None
+        "winner": None,
+        "spells": random.sample(list(EFFECT_LIBRARY.keys()), 3)
     }
     duels[ctx.author.id] = duel_id
     duels[opponent.id] = duel_id
@@ -469,10 +469,23 @@ async def handle_duel_message(message):
 
     if message.author.id not in duel["players"]:
         return
+    
+    # Check if the message content is a valid spell
+    if message.content.lower() in duel["spells"]:
+        winner = message.author
+        loser_id = next(uid for uid in duel["players"] if uid != winner.id)
+        loser = get_member_from_id(loser_id)
 
-    duel["messages"].append(message.id)
-    duel["expires_at"] = time.time() + DUEL_TIMER
-
+        # Winner gets a random effect and galleons
+        effect_name, effect_info = random.choice(list(EFFECT_LIBRARY.items()))
+        await add_effect(winner, effect_name)
+        add_galleons_local(winner.id, 50)
+        
+        # Announce the winner
+        await message.channel.send(f"⚡ {winner.mention} casts `{message.content.title()}` and wins the duel against {loser.mention}! They have been awarded 50 galleons and the **{effect_name.title()}** effect! 🪄")
+        
+        # End the duel
+        await end_duel(duel_id)
 
 @bot.command(name="duel")
 async def duel(ctx, opponent_mention=None):
@@ -495,38 +508,40 @@ async def duel(ctx, opponent_mention=None):
     duel_id = duels[ctx.author.id]
     p1 = ctx.author
     p2 = opponent
+    duel = duels[duel_id]
 
     msg = await ctx.send(f"A duel has been initiated between {p1.mention} and {p2.mention}!")
     duels[duel_id]["messages"].append(msg.id)
 
-    # Initial prompt
-    msg = await ctx.send(f"⚔️ {p1.mention} and {p2.mention}, react to this message to cast your spell! First to react wins!")
+    # Display the spells
+    spells_list = ', '.join(f"`{s.title()}`" for s in duel["spells"])
+    msg = await ctx.send(f"⚔️ {p1.mention} and {p2.mention}, choose a spell from this list and be the first to type it out to cast it! You have {DUEL_TIMER} seconds!\n**Spells:** {spells_list}")
     duels[duel_id]["messages"].append(msg.id)
 
-    def check(reaction, user):
-        return user.id in duel["players"] and str(reaction.emoji) in DUEL_REACTIONS
+    def check(message):
+        return message.author.id in duel["players"] and message.content.lower() in duel["spells"] and message.channel.id == duel["channel"]
 
     try:
-        reaction, user = await bot.wait_for('reaction_add', timeout=DUEL_TIMER, check=check)
-        winner = user
-        loser = p1 if winner == p2 else p2
+        message = await bot.wait_for('message', timeout=DUEL_TIMER, check=check)
+        winner = message.author
+        loser = p1 if winner.id == p2.id else p2
 
         # Winner gets a random effect and galleons
         effect_name, effect_info = random.choice(list(EFFECT_LIBRARY.items()))
         await add_effect(winner, effect_name)
         add_galleons_local(winner.id, 50)
-        await ctx.send(f"⚡ {winner.mention} casts a spell and wins the duel! They have been awarded 50 galleons and the **{effect_name.title()}** effect! 🪄")
+        
+        await ctx.send(f"⚡ {winner.mention} casts `{message.content.title()}` and wins the duel! They have been awarded 50 galleons and the **{effect_name.title()}** effect! 🪄")
         await end_duel(duel_id)
 
     except asyncio.TimeoutError:
-        await ctx.send("Duel timed out! No one won.")
+        await ctx.send("Duel timed out! No one was fast enough to cast a spell.")
         await end_duel(duel_id)
 
     except Exception as e:
         print(f"Error in duel: {e}")
         await ctx.send("An unexpected error occurred during the duel.")
         await end_duel(duel_id)
-
 
 # -------------------------
 # EFFECT FUNCTIONALITY
