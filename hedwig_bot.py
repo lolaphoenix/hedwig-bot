@@ -453,7 +453,6 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     if member:
         await expire_effect(member, uid)
 
-
 async def expire_effect(member: discord.Member, uid: str):
     if member.id not in active_effects:
         effects.pop(str(member.id), None)
@@ -479,15 +478,15 @@ async def expire_effect(member: discord.Member, uid: str):
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
-    
-    # Clean nickname base to remove any leftover Unicode emoji decorations
+
+    # Clean original nickname from all Unicode emoji decorations
     clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
     
-    # Update original nickname stored in active_effects
+    # Make sure to update the stored original nickname with the cleaned one
     if member.id in active_effects:
         active_effects[member.id]["original_nick"] = clean_nick
 
-    # Recompute and apply updated nickname
+    # Finally, recompute and apply the nickname without removed effects
     await update_member_display(member)
 
 async def recompute_nickname(member: discord.Member):
