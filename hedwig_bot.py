@@ -1113,19 +1113,24 @@ async def cleareffects(ctx, member: discord.Member = None):
 
     target_member = member or ctx.author
 
+    # Clear active effects from the user
     if target_member.id in active_effects:
-        # Clear all effects for the target user.
         for e in list(active_effects[target_member.id]["effects"]):
             await remove_effect(target_member, e["uid"])
-
         await ctx.send(f"🪄 All effects cleared for {target_member.display_name}.")
     else:
         await ctx.send(f"No active effects found for {target_member.display_name}.")
 
-    # New logic to clear the duel timer
+    # New logic to clear the duel state
     if target_member.id in duels:
-        duel_id = duels[target_member.id]
-        await end_duel(duel_id)
+        duel_id = duels.pop(target_member.id)
+        if duel_id in duels:
+            # We need to find and remove the opponent's state as well
+            duel_info = duels.pop(duel_id)
+            for player_id in duel_info["players"]:
+                if player_id != target_member.id:
+                    duels.pop(player_id, None)
+
         await ctx.send(f"⚔️ Duel timer has been cleared for {target_member.display_name}.")
 
 
