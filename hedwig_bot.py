@@ -214,18 +214,6 @@ def get_member_from_id(user_id: int):
             return m
     return None
 
-def strip_known_unicode(name: str) -> str:
-    if not name:
-        return name
-    for lib in (EFFECT_LIBRARY, POTION_LIBRARY):
-        for v in lib.values():
-            for key in ("prefix_unicode", "suffix_unicode"):
-                val = v.get(key)
-                if val:
-                    name = name.replace(val, "")
-    return name.strip()
-
-
 async def safe_add_role(member: discord.Member, role: discord.Role):
     try:
         await member.add_roles(role)
@@ -478,29 +466,28 @@ async def expire_effect(member: discord.Member, uid: str):
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
-
-    # Debug prints to check the nickname cleaning
-    print(f"[Debug] Before cleaning nickname: {active_effects.get(member.id, {}).get('original_nick', member.display_name)}")
-
-    # Clean the original nickname base (remove all Unicode emojis from effects/potions)
-    clean_nick = strip_known_unicode(active_effects.get(member.id, {}).get("original_nick", member.display_name))
-
-    print(f"[Debug] After cleaning nickname: {clean_nick}")
-
-    # Update the stored original nickname for the user
-    if member.id in active_effects:
-        active_effects[member.id]["original_nick"] = clean_nick
-
-    # Recompute and update the member's nickname on Discord
+    
+    # The next function call is what will now handle the nickname refresh.
     await update_member_display(member)
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
     if not data:
+        # If no active effects, reset to original display name.
+        if member.display_name != member.name:
+             await set_nickname(member, None)
         return
 
-    base = data.get("original_nick", member.display_name)
-
+    # Start with the member's current display name, which is the most reliable base.
+    base_name = data.get("original_nick", member.display_name)
+    
+    # We need to find the *true* base name, without any effects applied yet.
+    # The safest way is to clear all and re-apply.
+    await set_nickname(member, base_name)
+    
+    # Now that the nickname is reset, get the display name and build from there.
+    display_name = member.display_name
+    
     # Apply effects in order (stackable)
     for e in data["effects"]:
         kind = e.get("kind")
@@ -508,56 +495,56 @@ async def recompute_nickname(member: discord.Member):
         if kind == "nickname":
             prefix = e.get("prefix_unicode", "")
             suffix = e.get("suffix_unicode", "")
-            base = f"{prefix}{base}{suffix}"
+            display_name = f"{prefix}{display_name}{suffix}"
 
         elif kind == "truncate":
             length = e.get("length", 0)
-            if length and len(base) > length:
-                base = base[:-length]
+            if length and len(display_name) > length:
+                display_name = display_name[:-length]
 
         elif kind == "role_lumos":
             prefix = e.get("prefix_unicode", "")
             if prefix:
-                base = f"{prefix}{base}"
+                display_name = f"{prefix}{display_name}"
 
         elif kind and kind.startswith("potion_"):
             prefix = e.get("prefix_unicode", "")
             if prefix:
-                base = f"{prefix}{base}"
-
-    await set_nickname(member, base)
+                display_name = f"{prefix}{display_name}"
+    
+    await set_nickname(member, display_name)
 
 
 async def update_member_display(member: discord.Member):
     """Refresh nickname and roles from active effects."""
-    await recompute_nickname(member)
-
     user_effects = active_effects.get(member.id, {}).get("effects", [])
+
+    # First, handle roles, as they are independent of the nickname.
+    # Add all necessary roles for the active effects.
     for e in user_effects:
         kind = e.get("kind")
-
         if kind == "role_lumos":
             role = member.guild.get_role(ROLE_IDS["lumos"])
-            if role:
+            if role and role not in member.roles:
                 await safe_add_role(member, role)
-
         elif kind == "potion_amortentia":
             rid = e.get("role_id")
             role = member.guild.get_role(rid)
-            if role:
+            if role and role not in member.roles:
                 await safe_add_role(member, role)
-
         elif kind == "role_alohomora":
             role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-            if role:
+            if role and role not in member.roles:
                 await safe_add_role(member, role)
-
         elif kind == "potion_polyjuice":
             chosen = e.get("meta", {}).get("polyhouse")
             if chosen and chosen in ROLE_IDS:
                 role = member.guild.get_role(ROLE_IDS[chosen])
-                if role:
+                if role and role not in member.roles:
                     await safe_add_role(member, role)
+
+    # Now, recompute and set the nickname based on the roles that were added.
+    await recompute_nickname(member)
 
 # -------------------------
 # ROOM / ALOHOMORA GAME HELPERS
@@ -958,9 +945,6 @@ async def on_ready():
         member = guild.get_member(int(uid)) if guild else None
         if not member:
             continue
-
-        # Clean nickname so we don't stack emojis forever
-        clean_nick = strip_known_unicode(data.get("original_nick", member.display_name))
 
         active_effects[member.id] = {
             "original_nick": clean_nick,
