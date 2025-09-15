@@ -108,8 +108,6 @@ duel_cooldowns = {}
 # -------------------------
 # PERSISTENCE: data files
 # -------------------------
-effects = {}  # {user_id: {"effect": str, "expires": timestamp}}
-EFFECTS_FILE = "effects.json"
 try:
     DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 except NameError:
@@ -117,6 +115,7 @@ except NameError:
 os.makedirs(DATA_DIR, exist_ok=True)
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
 POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
+EFFECTS_FILE = os.path.join(DATA_DIR, "effects.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 
 # in-memory state (will be loaded on start)
