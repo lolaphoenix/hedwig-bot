@@ -121,10 +121,6 @@ POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 EFFECTS_FILE = os.path.join(DATA_DIR, "effects.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 
-# in-memory state (will be loaded on start)
-galleons = {}                          # int_user_id -> int
-house_points = {h: 0 for h in house_emojis}
-
 # -------------------------
 # PERSISTENCE FUNCTIONS
 # -------------------------
