@@ -843,7 +843,7 @@ async def daily(ctx):
         remaining = timedelta(hours=24) - (now - last_daily[user_id])
         hrs, rem = divmod(remaining.seconds, 3600)
         mins = rem // 60
-        return await ctx.send(f"⏳ You already collected daily. Try again in {hrs}h {mins}m.")
+        return await ctx.send(f"⏳ You already collected daily. Try again in {hrs}h {mins}m. You can use !remindme and I'll ping you when it's ready.")
     reward = random.randint(10, 30)
     add_galleons_local(user_id, reward)
     last_daily[user_id] = now
@@ -892,6 +892,35 @@ async def leaderboard(ctx):
         name = member.display_name if member else f"User {user_id}"
         result += f"{i}. {name} — {bal} galleons\n"
     await ctx.send(result)
+
+@bot.command()
+async def remindme(ctx):
+    """Set a reminder when your !daily is ready again."""
+    user_id = ctx.author.id
+    now = now_utc()
+
+    # If they've never used daily
+    if user_id not in last_daily:
+        return await ctx.send("❌ You haven’t collected your daily yet. Use `!daily` first!")
+
+    # Time remaining until reset
+    elapsed = now - last_daily[user_id]
+    if elapsed >= timedelta(hours=24):
+        return await ctx.send("✅ Your daily is already ready! Use `!daily` now.")
+
+    remaining = timedelta(hours=24) - elapsed
+    hrs, rem = divmod(remaining.seconds, 3600)
+    mins = rem // 60
+
+    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you in {hrs}h {mins}m when your daily is ready again.")
+
+    async def send_reminder():
+        await asyncio.sleep(remaining.total_seconds())
+        gringotts = bot.get_channel(GRINGOTTS_CHANNEL_ID)
+        if gringotts:
+            await gringotts.send(f"💰 {ctx.author.mention}, your daily galleons are ready to collect!")
+
+    asyncio.create_task(send_reminder())
 
 # -------------------------
 # COMMAND: SHOP (spells + potions)
