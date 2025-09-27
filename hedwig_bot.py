@@ -963,11 +963,17 @@ async def shoppotions(ctx):
 # -------------------------
 @bot.command()
 async def cast(ctx, spell: str, member: discord.Member):
-    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
-        return await ctx.send("❌ This command can only be used in the Dueling Club.")
+    # channel restriction: supports OWLRY + optional DUELING_CLUB_ID if defined
+    allowed = {OWLRY_CHANNEL_ID}
+    if "DUELING_CLUB_ID" in globals():
+        allowed.add(DUELING_CLUB_ID)
+    if ctx.channel.id not in allowed:
+        return await ctx.send("❌ This command can only be used in the Dueling Club or the Owlry channel.")
+
     caster = ctx.author
     spell = spell.lower()
 
+    # basic validation
     if spell not in EFFECT_LIBRARY:
         return await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shopspells`.")
 
@@ -976,52 +982,65 @@ async def cast(ctx, spell: str, member: discord.Member):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to cast that spell!")
 
-    # Alohomora has cooldown
+    # ---- Alohomora special (exclusive role + game) ----
     if spell == "alohomora":
         now = now_utc()
         last = alohomora_cooldowns.get(member.id)
         if last and now - last < timedelta(hours=24):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
-        # Alohomora starts the potion game
-        active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
-        await announce_room_for(member)
+
+        # Ensure exclusivity: remove the Alohomora role from anyone who already has it
+        role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+        if role:
+            for m in member.guild.members:
+                if role in m.roles:
+                    await safe_remove_role(m, role)
+
+        # charge + apply + give role + start game
         remove_galleons_local(caster.id, cost)
         await apply_effect_to_member(member, spell, source="spell")
+
+        active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
+        if role:
+            await safe_add_role(member, role)
+        await announce_room_for(member)
+
+        await ctx.send(f"✨ {caster.display_name} cast **Alohomora** on {member.display_name}! The Room of Requirement is open.")
         return
 
-    # Diffindo check
+    # ---- Diffindo special: fails if nickname <= 5 chars, no charge ----
     if spell == "diffindo":
         if len(member.display_name) <= 5:
-            return await ctx.send(f"✨ Your spell bounces off the wall! The target's nickname is too short. No galleons were taken.")
-            
-    # Finite: remove most recent effect
+            return await ctx.send("Your spell bounces off the wall and misses its target. No galleons have been spent. Try another target.")
+
+    # ---- Finite: remove the most recent effect (or named) ----
     if spell == "finite":
+        # verify there is something to remove
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
             return await ctx.send("❌ That user has no active spells/potions to finite.")
-        
+
         effects_list = active_effects[member.id]["effects"]
-        entry = effects_list[-1]
-        effect_name = entry.get("effect")
+        last_entry = effects_list[-1]
+        last_effect_name = last_entry.get("effect")
 
-        # Check if the last spell was Alohomora
-        if effect_name == "alohomora":
-            add_galleons_local(caster.id, cost)
-            return await ctx.send(f"🪄 The spell bounces back! You cannot use Finite on Alohomora. {caster.display_name} got their {cost} galleons back.")
+        # Prevent using Finite on Alohomora (policy in your code) — don't charge
+        if last_effect_name == "alohomora":
+            return await ctx.send(f"🪄 The spell bounces back! You cannot use Finite on Alohomora. No galleons were spent.")
 
-        # Check if the last effect was a potion
-        if effect_name in POTION_LIBRARY:
-            return await ctx.send(f"✂️ Finite can only be used on spells, not potions.")
-        
+        # Disallow Finite on potions (your rule) — don't charge
+        if last_effect_name in POTION_LIBRARY:
+            return await ctx.send("✂️ Finite can only be used on spells, not potions.")
+
+        # Charge and remove the last effect
         remove_galleons_local(caster.id, cost)
-        await expire_effect(member, entry["uid"])
-        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{effect_name}**.")
+        await expire_effect(member, last_entry["uid"])
+        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_effect_name}**.")
 
-    # All other spells:
+    # ---- All other spells (standard flow) ----
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
-
 
 # -------------------------
 # COMMAND: DRINK (potions)
