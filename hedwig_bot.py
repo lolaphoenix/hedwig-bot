@@ -965,6 +965,7 @@ async def shoppotions(ctx):
 async def cast(ctx, spell: str, member: discord.Member):
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     # channel restriction: supports OWLRY + optional DUELING_CLUB_ID if defined
     allowed = {OWLRY_CHANNEL_ID}
     if "DUELING_CLUB_ID" in globals():
@@ -972,6 +973,10 @@ async def cast(ctx, spell: str, member: discord.Member):
     if ctx.channel.id not in allowed:
         return await ctx.send("âŒ This command can only be used in the Dueling Club or the Owlry channel.")
 
+=======
+    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
 =======
     if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
         return await ctx.send("❌ This command can only be used in the Dueling Club.")
@@ -1005,6 +1010,7 @@ async def cast(ctx, spell: str, member: discord.Member):
         await apply_effect_to_member(member, spell, source="spell")
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
         if role:
@@ -1012,6 +1018,8 @@ async def cast(ctx, spell: str, member: discord.Member):
         await announce_room_for(member)
 
         await ctx.send(f"âœ¨ {caster.display_name} cast **Alohomora** on {member.display_name}! The Room of Requirement is open.")
+=======
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
 =======
 >>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
 =======
@@ -1033,6 +1041,9 @@ async def cast(ctx, spell: str, member: discord.Member):
             return await ctx.send("❌ That user has no active spells/potions to finite.")
         
 <<<<<<< HEAD
+<<<<<<< HEAD
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
+=======
 >>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
 =======
 >>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
@@ -1040,6 +1051,7 @@ async def cast(ctx, spell: str, member: discord.Member):
         entry = effects_list[-1]
         effect_name = entry.get("effect")
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
         # Prevent using Finite on Alohomora (policy in your code) â€” don't charge
@@ -1084,10 +1096,26 @@ async def cast(ctx, spell: str, member: discord.Member):
         return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{effect_name}**.")
 
 >>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
+=======
+        # Check if the last spell was Alohomora
+        if effect_name == "alohomora":
+            add_galleons_local(caster.id, cost)
+            return await ctx.send(f"🪄 The spell bounces back! You cannot use Finite on Alohomora. {caster.display_name} got their {cost} galleons back.")
+
+        # Check if the last effect was a potion
+        if effect_name in POTION_LIBRARY:
+            return await ctx.send(f"✂️ Finite can only be used on spells, not potions.")
+        
+        remove_galleons_local(caster.id, cost)
+        await expire_effect(member, entry["uid"])
+        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{effect_name}**.")
+
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
     # All other spells:
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"âœ¨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+
 
 
 
