@@ -963,6 +963,7 @@ async def shoppotions(ctx):
 # -------------------------
 @bot.command()
 async def cast(ctx, spell: str, member: discord.Member):
+<<<<<<< HEAD
     # channel restriction: supports OWLRY + optional DUELING_CLUB_ID if defined
     allowed = {OWLRY_CHANNEL_ID}
     if "DUELING_CLUB_ID" in globals():
@@ -970,10 +971,13 @@ async def cast(ctx, spell: str, member: discord.Member):
     if ctx.channel.id not in allowed:
         return await ctx.send("âŒ This command can only be used in the Dueling Club or the Owlry channel.")
 
+=======
+    if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
     caster = ctx.author
     spell = spell.lower()
 
-    # basic validation
     if spell not in EFFECT_LIBRARY:
         return await ctx.send("âŒ That spell doesnâ€™t exist. Check the shop with `!shopspells`.")
 
@@ -982,24 +986,19 @@ async def cast(ctx, spell: str, member: discord.Member):
     if get_balance(caster.id) < cost:
         return await ctx.send("ðŸ’¸ You donâ€™t have enough galleons to cast that spell!")
 
-    # ---- Alohomora special (exclusive role + game) ----
+    # Alohomora has cooldown
     if spell == "alohomora":
         now = now_utc()
         last = alohomora_cooldowns.get(member.id)
         if last and now - last < timedelta(hours=24):
             return await ctx.send("â³ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
-
-        # Ensure exclusivity: remove the Alohomora role from anyone who already has it
-        role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-        if role:
-            for m in member.guild.members:
-                if role in m.roles:
-                    await safe_remove_role(m, role)
-
-        # charge + apply + give role + start game
+        # Alohomora starts the potion game
+        active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
+        await announce_room_for(member)
         remove_galleons_local(caster.id, cost)
         await apply_effect_to_member(member, spell, source="spell")
+<<<<<<< HEAD
 
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
         if role:
@@ -1007,23 +1006,30 @@ async def cast(ctx, spell: str, member: discord.Member):
         await announce_room_for(member)
 
         await ctx.send(f"âœ¨ {caster.display_name} cast **Alohomora** on {member.display_name}! The Room of Requirement is open.")
+=======
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
         return
 
-    # ---- Diffindo special: fails if nickname <= 5 chars, no charge ----
+    # Diffindo check
     if spell == "diffindo":
         if len(member.display_name) <= 5:
-            return await ctx.send("Your spell bounces off the wall and misses its target. No galleons have been spent. Try another target.")
-
-    # ---- Finite: remove the most recent effect (or named) ----
+            return await ctx.send(f"✨ Your spell bounces off the wall! The target's nickname is too short. No galleons were taken.")
+            
+    # Finite: remove most recent effect
     if spell == "finite":
-        # verify there is something to remove
         if member.id not in active_effects or not active_effects[member.id]["effects"]:
+<<<<<<< HEAD
             return await ctx.send("âŒ That user has no active spells/potions to finite.")
 
+=======
+            return await ctx.send("❌ That user has no active spells/potions to finite.")
+        
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
         effects_list = active_effects[member.id]["effects"]
-        last_entry = effects_list[-1]
-        last_effect_name = last_entry.get("effect")
+        entry = effects_list[-1]
+        effect_name = entry.get("effect")
 
+<<<<<<< HEAD
         # Prevent using Finite on Alohomora (policy in your code) â€” don't charge
         if last_effect_name == "alohomora":
             return await ctx.send(f"ðŸª„ The spell bounces back! You cannot use Finite on Alohomora. No galleons were spent.")
@@ -1036,11 +1042,26 @@ async def cast(ctx, spell: str, member: discord.Member):
         remove_galleons_local(caster.id, cost)
         await expire_effect(member, last_entry["uid"])
         return await ctx.send(f"âœ¨ {caster.display_name} cast Finite on {member.display_name} â€” removed **{last_effect_name}**.")
+=======
+        # Check if the last spell was Alohomora
+        if effect_name == "alohomora":
+            add_galleons_local(caster.id, cost)
+            return await ctx.send(f"🪄 The spell bounces back! You cannot use Finite on Alohomora. {caster.display_name} got their {cost} galleons back.")
 
-    # ---- All other spells (standard flow) ----
+        # Check if the last effect was a potion
+        if effect_name in POTION_LIBRARY:
+            return await ctx.send(f"✂️ Finite can only be used on spells, not potions.")
+        
+        remove_galleons_local(caster.id, cost)
+        await expire_effect(member, entry["uid"])
+        return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{effect_name}**.")
+>>>>>>> parent of 3088fa1 (Update hedwig_bot.py)
+
+    # All other spells:
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"âœ¨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
+
 
 # -------------------------
 # COMMAND: DRINK (potions)
