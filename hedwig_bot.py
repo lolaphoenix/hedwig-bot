@@ -118,10 +118,12 @@ os.makedirs(DATA_DIR, exist_ok=True)
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
 POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
+REMINDERS_FILE = os.path.join(DATA_DIR, "reminders.json")
 
 # in-memory state (will be loaded on start)
 galleons = {}                          # int_user_id -> int
 house_points = {h: 0 for h in house_emojis}
+reminders = []  # list of {user_id, remind_at: iso str}
 
 # --- galleons persistence ---
 def load_galleons():
@@ -206,6 +208,31 @@ def save_duel_cooldowns():
     except Exception as e:
         print("[Hedwig] Failed to save duel cooldowns:", e)
 
+# --- reminders persistence ---
+
+def load_reminders():
+    global reminders
+    try:
+        if os.path.exists(REMINDERS_FILE):
+            with open(REMINDERS_FILE, "r", encoding="utf-8") as f:
+                reminders = json.load(f)
+        else:
+            reminders = []
+            save_reminders()
+    except Exception as e:
+        print("[Hedwig] Failed to load reminders:", e)
+        reminders = []
+
+def save_reminders():
+    try:
+        tmp = REMINDERS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(reminders, f, indent=2)
+        os.replace(tmp, REMINDERS_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save reminders:", e)
+
+
 # -------------------------
 # Persistence Functions
 # -------------------------
@@ -221,6 +248,64 @@ def load_effects():
 def save_effects():
     with open(EFFECTS_FILE, "w") as f:
         json.dump(effects, f, indent=4)
+
+# -------------------------
+# Reminders persistence
+# -------------------------
+REMINDERS_FILE = os.path.join(DATA_DIR, "reminders.json")
+reminders = {}  # str(user_id) -> isoformat timestamp
+
+def load_reminders():
+    global reminders
+    try:
+        if os.path.exists(REMINDERS_FILE):
+            with open(REMINDERS_FILE, "r", encoding="utf-8") as f:
+                reminders = json.load(f)
+            print(f"[Hedwig] loaded {len(reminders)} reminders from {REMINDERS_FILE}")
+        else:
+            reminders = {}
+            save_reminders()
+    except Exception as e:
+        print("[Hedwig] Failed to load reminders:", e)
+        reminders = {}
+
+def save_reminders():
+    try:
+        tmp = REMINDERS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(reminders, f, indent=2)
+        os.replace(tmp, REMINDERS_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save reminders:", e)
+
+async def schedule_reminder(user_id: int, remind_at: datetime):
+    """Sleep until remind_at and then send reminder (if still present)."""
+    now = now_utc()
+    delta = (remind_at - now).total_seconds()
+    if delta > 0:
+        await asyncio.sleep(delta)
+    # check it's still scheduled and is due
+    key = str(user_id)
+    iso = reminders.get(key)
+    if not iso:
+        return
+    try:
+        due = datetime.fromisoformat(iso)
+    except Exception:
+        # corrupt entry
+        reminders.pop(key, None)
+        save_reminders()
+        return
+    if now_utc() >= due:
+        channel = bot.get_channel(GRINGOTTS_CHANNEL_ID)
+        try:
+            if channel:
+                await channel.send(f"💰 <@{user_id}>, your daily galleons are ready to collect!")
+        except Exception as e:
+            print("[Hedwig] Failed to send reminder:", e)
+        # clear it
+        reminders.pop(key, None)
+        save_reminders()
 
 
 # -------------------------
@@ -388,6 +473,8 @@ EFFECT_LIBRARY = {
         "cost": 15, "kind": "role_lumos",
         "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
         "suffix_unicode": "⭐",
+	"duration": 86400,
+	"role_id": ROLE_IDS["lumos"],
         "description": "Gives the Lumos role and a star prefix to the nickname."
     },
     "finite": {
@@ -462,6 +549,16 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     if member.id not in active_effects:
         active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
+    clean_base = strip_known_unicode(member.display_name)
+    meta = meta or {}
+
+    if effect_def.get("kind") == "truncate":
+        length = effect_def.get("length", 0)
+        if length and len(clean_base) >= length:
+            meta["removed_part"] = clean_base[-length:]
+        else:
+            meta["removed_part"] = clean_base
+
     entry = {
         "uid": uid,
         "effect": effect_name,
@@ -474,6 +571,15 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "suffix_unicode": suffix_unicode,
         "meta": meta or {}
     }
+
+    # --- If this is a truncate effect (eg. diffindo), capture the removed portion so we can restore later ---
+    if entry.get("kind") == "truncate":
+        length = entry.get("length", 0) or 0
+        if length:
+            # compute removed part from visible display name stripped of known unicode decorations
+            current = strip_known_unicode(member.display_name)
+            removed = current[-length:] if len(current) >= length else current
+            entry.setdefault("meta", {})["removed_part"] = removed
 
     # Add role immediately if relevant
     role_id = entry.get("role_id")
@@ -490,7 +596,7 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     save_effects()
 
     # schedule expiry and apply visible changes
-    if entry.get("kind") in ("potion_polyjuice", "role_alohomora"):
+    if entry.get("kind") in ("potion_polyjuice", "role_alohomora", "role_lumos"):
         asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
 
     await update_member_display(member)
@@ -509,23 +615,36 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
         await expire_effect(member, uid)
 
 async def expire_effect(member: discord.Member, uid: str):
-    if member.id not in active_effects:
-        effects.pop(str(member.id), None)
-        save_effects()
-        return
+    member_key = str(member.id)
+    expired = None
 
-    expired = next((e for e in active_effects[member.id]["effects"] if e["uid"] == uid), None)
-    active_effects[member.id]["effects"] = [
-        e for e in active_effects[member.id]["effects"] if e["uid"] != uid
-    ]
+    if member.id in active_effects:
+        expired = next((e for e in active_effects[member.id]["effects"] if e.get("uid") == uid), None)
+        active_effects[member.id]["effects"] = [
+            e for e in active_effects[member.id]["effects"] if e.get("uid") != uid
+        ]
 
-    if active_effects.get(member.id, {}).get("effects"):
-        effects[str(member.id)] = active_effects[member.id]
-    else:
-        effects.pop(str(member.id), None)
-        active_effects.pop(member.id, None)
+    if not expired:
+        persisted = effects.get(member_key, {}).get("effects", [])
+        expired = next((e for e in persisted if e.get("uid") == uid), None)
+        if expired:
+            new_persisted = [e for e in persisted if e.get("uid") != uid]
+            if new_persisted:
+                effects[member_key]["effects"] = new_persisted
+            else:
+                effects.pop(member_key, None)
 
-    save_effects()
+    if expired and expired.get("kind") == "truncate":
+        removed = expired.get("meta", {}).get("removed_part")
+        if removed:
+            if member.id in active_effects:
+                orig = active_effects[member.id].get("original_nick", member.display_name) or ""
+                if not orig.endswith(removed):
+                    active_effects[member.id]["original_nick"] = orig + removed
+                    effects[member_key] = active_effects[member.id]
+            else:
+                active_effects[member.id] = {"original_nick": member.display_name + removed, "effects": []}
+                effects[member_key] = active_effects[member.id]
 
     if expired:
         role_id = expired.get("role_id")
@@ -533,8 +652,25 @@ async def expire_effect(member: discord.Member, uid: str):
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
-    
-    # The next function call is what will now handle the nickname refresh.
+
+        if expired.get("kind") == "role_lumos" or expired.get("effect") == "lumos":
+            lumos_rid = ROLE_IDS.get("lumos")
+            if lumos_rid:
+                role = member.guild.get_role(lumos_rid)
+                if role and role in member.roles:
+                    await safe_remove_role(member, role)
+
+        if expired.get("kind") == "silence":
+            silenced_until.pop(member.id, None)
+
+    if member.id in active_effects and active_effects[member.id].get("effects"):
+        effects[member_key] = active_effects[member.id]
+    else:
+        effects.pop(member_key, None)
+        if member.id in active_effects:
+            active_effects.pop(member.id, None)
+
+    save_effects()
     await update_member_display(member)
 
 async def recompute_nickname(member: discord.Member):
@@ -899,28 +1035,24 @@ async def remindme(ctx):
     user_id = ctx.author.id
     now = now_utc()
 
-    # If they've never used daily
     if user_id not in last_daily:
         return await ctx.send("❌ You haven’t collected your daily yet. Use `!daily` first!")
 
-    # Time remaining until reset
     elapsed = now - last_daily[user_id]
     if elapsed >= timedelta(hours=24):
         return await ctx.send("✅ Your daily is already ready! Use `!daily` now.")
 
     remaining = timedelta(hours=24) - elapsed
+    remind_at = now + remaining
+
+    # persist and schedule
+    reminders[str(user_id)] = remind_at.isoformat()
+    save_reminders()
+    asyncio.create_task(schedule_reminder(user_id, remind_at))
+
     hrs, rem = divmod(remaining.seconds, 3600)
     mins = rem // 60
-
     await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you in {hrs}h {mins}m when your daily is ready again.")
-
-    async def send_reminder():
-        await asyncio.sleep(remaining.total_seconds())
-        gringotts = bot.get_channel(GRINGOTTS_CHANNEL_ID)
-        if gringotts:
-            await gringotts.send(f"💰 {ctx.author.mention}, your daily galleons are ready to collect!")
-
-    asyncio.create_task(send_reminder())
 
 # -------------------------
 # COMMAND: SHOP (spells + potions)
@@ -1237,14 +1369,42 @@ async def clear_channel(ctx, limit: int = 100):
 async def on_ready():
     if not cleanup_effects.is_running():
         cleanup_effects.start()
+    if not check_reminders.is_running():
+        check_reminders.start()
     load_galleons()
     load_house_points()
     load_effects()
+    load_reminders()
     load_duel_cooldowns()
 
     guild = bot.get_guild(1398801863549259796)
 
     new_effects = {}
+
+
+    # schedule any pending reminders (or send immediately if overdue)
+    for uid_str, iso in list(reminders.items()):
+        try:
+            remind_at = datetime.fromisoformat(iso)
+        except Exception:
+            reminders.pop(uid_str, None)
+            continue
+        uid = int(uid_str)
+        if remind_at > now_utc():
+            asyncio.create_task(schedule_reminder(uid, remind_at))
+        else:
+            # overdue: try to send immediately
+            channel = bot.get_channel(GRINGOTTS_CHANNEL_ID)
+            if channel:
+                try:
+                    user = get_member_from_id(uid)
+                    if user:
+                        await channel.send(f"💰 {user.mention}, your daily galleons are ready to collect!")
+                except Exception as e:
+                    print("[Hedwig] Failed to send overdue reminder:", e)
+            reminders.pop(uid_str, None)
+    save_reminders()
+
 
     # Rehydrate saved effects
     for uid, data in list(effects.items()):  # Use a copy to avoid modification issues
@@ -1326,5 +1486,27 @@ async def cleanup_effects():
         print(f"[Hedwig] Cleaned up {len(expired)} expired effects")
 
 
+@tasks.loop(minutes=1)
+async def check_reminders():
+    now = now_utc()
+    to_remove = []
+
+    for r in reminders:
+        remind_time = datetime.fromisoformat(r["remind_at"])
+        if now >= remind_time:
+            member = get_member_from_id(int(r["user_id"]))
+            channel = bot.get_channel(GRINGOTTS_CHANNEL_ID)
+            if member and channel:
+                try:
+                    await channel.send(f"💰 {member.mention}, your daily galleons are ready! Use `!daily` now.")
+                except Exception as e:
+                    print("Reminder failed:", e)
+            to_remove.append(r)
+
+    # remove delivered reminders
+    if to_remove:
+        for r in to_remove:
+            reminders.remove(r)
+        save_reminders()
 
 bot.run(TOKEN)
