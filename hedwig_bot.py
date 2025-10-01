@@ -388,6 +388,7 @@ EFFECT_LIBRARY = {
         "cost": 15, "kind": "role_lumos",
         "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
         "suffix_unicode": "⭐",
+	"duration": 10,
         "description": "Gives the Lumos role and a star prefix to the nickname."
     },
     "finite": {
@@ -489,11 +490,12 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     effects[str(member.id)] = active_effects[member.id]
     save_effects()
 
-    # schedule expiry and apply visible changes
-    if entry.get("kind") in ("potion_polyjuice", "role_alohomora"):
-        asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
+    # schedule expiry for any temporary effect (expires_at set when effect_def defines duration)
+    if expires_at:
+       asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
 
     await update_member_display(member)
+
 
 
     # Update nickname/roles
