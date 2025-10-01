@@ -535,6 +535,12 @@ async def expire_effect(member: discord.Member, uid: str):
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
+        if expired.get("kind") == "role_lumos":
+            lumos_rid = ROLE_IDS.get("lumos")
+            if lumos_rid:
+                lumos_role = member.guild.get_role(lumos_rid)
+                if lumos_role and lumos_role in member.roles:
+                    await safe_remove_role(member, lumos_role)
     
     # The next function call is what will now handle the nickname refresh.
     await update_member_display(member)
