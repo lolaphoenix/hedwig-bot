@@ -388,7 +388,7 @@ EFFECT_LIBRARY = {
         "cost": 15, "kind": "role_lumos",
         "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
         "suffix_unicode": "⭐",
-	"duration": 10,
+	"duration": 86400,
         "description": "Gives the Lumos role and a star prefix to the nickname."
     },
     "finite": {
@@ -1040,8 +1040,18 @@ async def cast(ctx, spell: str, member: discord.Member):
         if last_effect_name in POTION_LIBRARY:
             return await ctx.send("✂️ Finite can only be used on spells, not potions.")
 
-        # Charge and remove the last effect
+        # Charge first
         remove_galleons_local(caster.id, cost)
+
+        # Special-case Lumos: remove role immediately
+        if last_entry.get("kind") == "role_lumos":
+            lumos_rid = ROLE_IDS.get("lumos")
+            if lumos_rid:
+                lumos_role = member.guild.get_role(lumos_rid)
+                if lumos_role and lumos_role in member.roles:
+                    await safe_remove_role(member, lumos_role)
+
+        # Expire the effect normally (this also updates nickname etc.)
         await expire_effect(member, last_entry["uid"])
         return await ctx.send(f"✨ {caster.display_name} cast Finite on {member.display_name} — removed **{last_effect_name}**.")
 
