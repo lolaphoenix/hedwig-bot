@@ -118,6 +118,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 GALLEONS_FILE = os.path.join(DATA_DIR, "galleons.json")
 POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
+REMINDERS_FILE = os.path.join(DATA_DIR, "reminders.json")
 
 # in-memory state (will be loaded on start)
 galleons = {}                          # int_user_id -> int
@@ -150,6 +151,32 @@ def save_galleons():
         os.replace(tmp, GALLEONS_FILE)
     except Exception as e:
         print("[Hedwig] Failed to save galleons:", e)
+
+def load_reminders():
+    global reminders
+    try:
+        if os.path.exists(REMINDERS_FILE):
+            with open(REMINDERS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            reminders = {int(k): v for k, v in raw.items()}
+            print(f"[Hedwig] loaded {len(reminders)} reminders from {REMINDERS_FILE}")
+        else:
+            reminders = {}
+            save_reminders()
+            print(f"[Hedwig] created new reminders file at {REMINDERS_FILE}")
+    except Exception as e:
+        print("[Hedwig] Failed to load reminders:", e)
+        reminders = {}
+
+def save_reminders():
+    try:
+        tmp = REMINDERS_FILE + ".tmp"
+        serializable = {str(k): v for k, v in reminders.items()}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+        os.replace(tmp, REMINDERS_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save reminders:", e)
 
 # --- house points persistence ---
 def load_house_points():
@@ -231,6 +258,7 @@ active_effects = {}       # user_id -> {"original_nick": str, "effects": [ ... ]
 active_potions = {}       # user_id -> {"winning": int, "chosen": bool, "started_by": id}
 
 alohomora_cooldowns = {}    # target_user_id -> datetime
+reminders = {}  # {user_id: "2025-10-01T15:30:00"}  # store ISO datetime when daily is ready
 
 # -------------------------
 # PERSISTENCE: Dueling
@@ -327,6 +355,37 @@ def get_user_house(member: discord.Member):
         if rid and any(r.id == rid for r in member.roles):
             return name
     return None
+
+async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
+    """Sleep until remind_at then send reminder if still valid."""
+    now = now_utc()
+    delay = (remind_at - now).total_seconds()
+    if delay <= 0:
+        return
+
+    await asyncio.sleep(delay)
+
+    # Still in reminders?
+    if str(user_id) not in reminders and user_id not in reminders:
+        return
+
+    # Send reminder in Gringotts
+    gringotts = bot.get_channel(GRINGOTTS_CHANNEL_ID)
+    if gringotts:
+        member = get_member_from_id(user_id)
+        if member:
+            await gringotts.send(f"💰 {member.mention}, your daily galleons are ready to collect!")
+
+    if recurring:
+        # Schedule next reminder in 24h
+        next_time = now_utc() + timedelta(hours=24)
+        reminders[user_id] = next_time.isoformat()
+        save_reminders()
+        asyncio.create_task(schedule_reminder(user_id, next_time, recurring=True))
+    else:
+        # One-off: remove after sending
+        reminders.pop(user_id, None)
+        save_reminders()
 
 # -------------------------
 # LIBRARIES
@@ -903,7 +962,10 @@ async def leaderboard(ctx):
 
 @bot.command()
 async def remindme(ctx):
-    """Set a reminder when your !daily is ready again."""
+    """Set a recurring daily reminder when !daily is ready again."""
+    if ctx.channel.id != GRINGOTTS_CHANNEL_ID:
+        return await ctx.send("❌ This command can only be used in Gringotts Bank.")
+
     user_id = ctx.author.id
     now = now_utc()
 
@@ -914,21 +976,26 @@ async def remindme(ctx):
     # Time remaining until reset
     elapsed = now - last_daily[user_id]
     if elapsed >= timedelta(hours=24):
-        return await ctx.send("✅ Your daily is already ready! Use `!daily` now.")
+        # Already ready — remind in 24h from now
+        remaining = timedelta(hours=24)
+    else:
+        remaining = timedelta(hours=24) - elapsed
 
-    remaining = timedelta(hours=24) - elapsed
     hrs, rem = divmod(remaining.seconds, 3600)
     mins = rem // 60
 
-    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you in {hrs}h {mins}m when your daily is ready again.")
+    remind_at = now + remaining
 
-    async def send_reminder():
-        await asyncio.sleep(remaining.total_seconds())
-        gringotts = bot.get_channel(GRINGOTTS_CHANNEL_ID)
-        if gringotts:
-            await gringotts.send(f"💰 {ctx.author.mention}, your daily galleons are ready to collect!")
+    # Always replace the existing reminder with a new one
+    reminders[user_id] = remind_at.isoformat()
+    save_reminders()
 
-    asyncio.create_task(send_reminder())
+    # Schedule the reminder
+    asyncio.create_task(schedule_reminder(user_id, remind_at, recurring=True))
+
+    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you every {hrs}h {mins}m when your daily is ready again.")
+
+
 
 # -------------------------
 # COMMAND: SHOP (spells + potions)
@@ -1258,6 +1325,25 @@ async def on_ready():
     load_galleons()
     load_house_points()
     load_effects()
+    load_reminders()
+
+    # Re-schedule any saved reminders
+    now = now_utc()
+    for uid, iso_time in list(reminders.items()):
+        try:
+            remind_at = datetime.fromisoformat(iso_time)
+        except Exception:
+            continue
+
+        # If time already passed, remove from file
+        if remind_at <= now:
+            reminders.pop(uid, None)
+            save_reminders()
+            continue
+
+        # Otherwise schedule reminder
+        asyncio.create_task(schedule_reminder(uid, remind_at))
+
     load_duel_cooldowns()
 
     guild = bot.get_guild(1398801863549259796)
