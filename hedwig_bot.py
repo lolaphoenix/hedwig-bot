@@ -522,6 +522,16 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     if member.id not in active_effects:
         active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
+    # --- Special handling for Diffindo (truncate nickname) ---
+    if effect_def.get("kind") == "truncate":
+        length = effect_def.get("length", 0)
+        base = active_effects[member.id]["original_nick"]
+        if length and len(base) > length:
+            removed_part = base[-length:]
+            if meta is None:
+                meta = {}
+            meta["removed_part"] = removed_part
+
     entry = {
         "uid": uid,
         "effect": effect_name,
@@ -551,11 +561,7 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
 
     # schedule expiry for any temporary effect (expires_at set when effect_def defines duration)
     if expires_at:
-       asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
-
-    await update_member_display(member)
-
-
+        asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
 
     # Update nickname/roles
     await update_member_display(member)
@@ -589,20 +595,41 @@ async def expire_effect(member: discord.Member, uid: str):
     save_effects()
 
     if expired:
+        # --- Handle roles ---
         role_id = expired.get("role_id")
         if role_id:
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
+
         if expired.get("kind") == "role_lumos":
             lumos_rid = ROLE_IDS.get("lumos")
             if lumos_rid:
                 lumos_role = member.guild.get_role(lumos_rid)
                 if lumos_role and lumos_role in member.roles:
                     await safe_remove_role(member, lumos_role)
-    
-    # The next function call is what will now handle the nickname refresh.
+
+        # --- Handle truncate restore (Diffindo) ---
+        if expired.get("kind") == "truncate":
+            removed = expired.get("meta", {}).get("removed_part")
+            if removed:
+                if member.id in active_effects:
+                    orig = active_effects[member.id].get("original_nick", "") or ""
+                    if not orig.endswith(removed):  # prevent duplicates
+                        active_effects[member.id]["original_nick"] = orig + removed
+                        effects[str(member.id)] = active_effects[member.id]
+                        save_effects()
+                else:
+                    # fallback: just restore directly
+                    effects[str(member.id)] = {
+                        "original_nick": member.display_name + removed,
+                        "effects": []
+                    }
+                    save_effects()
+
+    # Finally, refresh display/nick
     await update_member_display(member)
+
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
