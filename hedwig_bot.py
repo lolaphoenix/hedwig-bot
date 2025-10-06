@@ -506,11 +506,11 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         print(f"[Hedwig] Tried to apply unknown effect: {effect_name}")
         return
 
-    # Only Polyjuice & Alohomora have durations
-    duration = effect_def.get("duration", 0)
-    expires_at = None
-    if duration and duration > 0:
-        expires_at = datetime.utcnow() + timedelta(seconds=duration)
+    # Only certain effects expire (Polyjuice, Alohomora, and Lumos)
+    duration = 0
+    if effect_name in ("polyjuice", "alohomora", "lumos"):
+        duration = effect_def.get("duration", 86400)  # default 24 hours
+    expires_at = datetime.utcnow() + timedelta(seconds=duration) if duration else None
 
     uid = f"{effect_name}_{int(time.time())}"
 
@@ -608,6 +608,14 @@ async def expire_effect(member: discord.Member, uid: str):
                 lumos_role = member.guild.get_role(lumos_rid)
                 if lumos_role and lumos_role in member.roles:
                     await safe_remove_role(member, lumos_role)
+        
+        # --- Handle Polyjuice role removal ---
+        if expired.get("kind") == "potion_polyjuice":
+            chosen = expired.get("meta", {}).get("polyhouse")
+            if chosen and chosen in ROLE_IDS:
+                role = member.guild.get_role(ROLE_IDS[chosen])
+                if role and role in member.roles:
+                    await safe_remove_role(member, role)
 
         # --- Handle truncate restore (Diffindo) ---
         if expired.get("kind") == "truncate":
