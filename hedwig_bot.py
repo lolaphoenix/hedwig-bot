@@ -1119,6 +1119,17 @@ async def cast(ctx, spell: str, member: discord.Member):
     # ---- Alohomora special (exclusive role + game) ----
     if spell == "alohomora":
         now = now_utc()
+
+        # --- Global Alohomora cooldown (30 minutes) ---
+        global_last = alohomora_cooldowns.get("global_last_cast")
+        if global_last and now - global_last < timedelta(minutes=30):
+            remaining = timedelta(minutes=30) - (now - global_last)
+            mins, secs = divmod(int(remaining.total_seconds()), 60)
+            return await ctx.send(f"⏳ The Room of Requirement is still open! Try again in {mins}m {secs}s.")
+
+        alohomora_cooldowns["global_last_cast"] = now
+
+        # --- Target-specific cooldown (still 24h per user) ---
         last = alohomora_cooldowns.get(member.id)
         if last and now - last < timedelta(hours=24):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
