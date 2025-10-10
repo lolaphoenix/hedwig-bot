@@ -1390,59 +1390,47 @@ async def on_ready():
     unique = {}
     for k, v in reminders.items():
         uid = int(k)
-        # Keep only the latest scheduled reminder per user
         if uid not in unique or v > unique[uid]:
-           unique[uid] = v
-
+            unique[uid] = v
     reminders.clear()
     reminders.update({str(k): v for k, v in unique.items()})
     save_reminders()
 
-# Re-schedule valid reminders
-for uid, iso_time in reminders.items():
-
+    # Re-schedule valid reminders
+    for uid, iso_time in reminders.items():
+        remind_time = datetime.fromisoformat(iso_time)
+        if remind_time > datetime.utcnow():
+            task = asyncio.create_task(schedule_reminder(int(uid), remind_time, recurring=True))
+            reminder_tasks[int(uid)] = task
 
     load_duel_cooldowns()
 
     guild = bot.get_guild(1398801863549259796)
-
     new_effects = {}
 
     # Rehydrate saved effects
-    for uid, data in list(effects.items()):  # Use a copy to avoid modification issues
+    for uid, data in list(effects.items()):
         member = guild.get_member(int(uid)) if guild else None
         if not member:
             continue
-        
-        # Check for the 'original_nick' key and set a default if not found
         original_nick = data.get("original_nick", member.display_name)
-
-        active_effects[member.id] = {
-            "original_nick": original_nick,
-            "effects": []
-        }
-
+        active_effects[member.id] = {"original_nick": original_nick, "effects": []}
         for e in data.get("effects", []):
             try:
                 if "expires_at" in e and e["expires_at"]:
                     exp_time = datetime.fromisoformat(e["expires_at"])
-                    # Only reapply if still valid
                     if exp_time > datetime.utcnow():
                         active_effects[member.id]["effects"].append(e)
-                        # Schedule expiry only for temporary ones
-                        if e.get("kind") in ("potion_polyjuice", "role_alohomora"):
+                        if e.get("kind") in ("potion_polyjuice", "role_alohomora", "role_lumos"):
                             asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
                 else:
-                    # If there's no expiration date, assume it's a permanent effect and reapply
                     active_effects[member.id]["effects"].append(e)
-
             except Exception as err:
                 print(f"[Hedwig] Error restoring effect for {member.display_name}: {err}")
 
         if active_effects[member.id]["effects"]:
             new_effects[uid] = active_effects[member.id]
 
-    # Replace in-memory effects and persist cleaned file
     effects.clear()
     effects.update(new_effects)
     save_effects()
@@ -1452,6 +1440,7 @@ for uid, iso_time in reminders.items():
         await owlry_channel.send("🦉 Hedwig is flying again!")
 
     print(f"[Hedwig] Logged in as {bot.user}")
+
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
