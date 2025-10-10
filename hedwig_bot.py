@@ -259,6 +259,7 @@ active_potions = {}       # user_id -> {"winning": int, "chosen": bool, "started
 
 alohomora_cooldowns = {}    # target_user_id -> datetime
 reminders = {}  # {user_id: "2025-10-01T15:30:00"}  # store ISO datetime when daily is ready
+reminder_tasks = {}  # user_id -> asyncio.Task for recurring reminders
 
 # -------------------------
 # PERSISTENCE: Dueling
@@ -363,7 +364,10 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
     if delay <= 0:
         return
 
-    await asyncio.sleep(delay)
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        return  # cancelled safely (user replaced reminder)
 
     # Still in reminders?
     if str(user_id) not in reminders and user_id not in reminders:
@@ -381,11 +385,24 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
         next_time = now_utc() + timedelta(hours=24)
         reminders[user_id] = next_time.isoformat()
         save_reminders()
-        asyncio.create_task(schedule_reminder(user_id, next_time, recurring=True))
+
+        # Cancel old task (if running) and replace it
+        existing_task = reminder_tasks.get(user_id)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+
+        new_task = asyncio.create_task(schedule_reminder(user_id, next_time, recurring=True))
+        reminder_tasks[user_id] = new_task
+
     else:
         # One-off: remove after sending
         reminders.pop(user_id, None)
         save_reminders()
+
+    # ✅ Clean up finished task reference (prevents memory buildup)
+    if user_id in reminder_tasks and reminder_tasks[user_id].done():
+        reminder_tasks.pop(user_id, None)
+
 
 # -------------------------
 # LIBRARIES
@@ -995,6 +1012,9 @@ async def leaderboard(ctx):
         result += f"{i}. {name} — {bal} galleons\n"
     await ctx.send(result)
 
+# Track running reminder tasks in memory
+reminder_tasks = {}  # {user_id: asyncio.Task}
+
 @bot.command()
 async def remindme(ctx):
     """Set a recurring daily reminder when !daily is ready again."""
@@ -1011,25 +1031,29 @@ async def remindme(ctx):
     # Time remaining until reset
     elapsed = now - last_daily[user_id]
     if elapsed >= timedelta(hours=24):
-        # Already ready — remind in 24h from now
         remaining = timedelta(hours=24)
     else:
         remaining = timedelta(hours=24) - elapsed
 
     hrs, rem = divmod(remaining.seconds, 3600)
     mins = rem // 60
-
     remind_at = now + remaining
 
-    # Always replace the existing reminder with a new one
+    # --- Prevent duplicate reminders ---
+    # Cancel any existing reminder task
+    existing_task = reminder_tasks.get(user_id)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+
+    # Replace in persistence
     reminders[user_id] = remind_at.isoformat()
     save_reminders()
 
-    # Schedule the reminder
-    asyncio.create_task(schedule_reminder(user_id, remind_at, recurring=True))
+    # Schedule the reminder and store task
+    task = asyncio.create_task(schedule_reminder(user_id, remind_at, recurring=True))
+    reminder_tasks[user_id] = task
 
     await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you every {hrs}h {mins}m when your daily is ready again.")
-
 
 
 # -------------------------
@@ -1362,22 +1386,21 @@ async def on_ready():
     load_effects()
     load_reminders()
 
-    # Re-schedule any saved reminders
-    now = now_utc()
-    for uid, iso_time in list(reminders.items()):
-        try:
-            remind_at = datetime.fromisoformat(iso_time)
-        except Exception:
-            continue
+    # Clean up duplicate reminder keys (string vs int)
+    unique = {}
+    for k, v in reminders.items():
+        uid = int(k)
+        # Keep only the latest scheduled reminder per user
+        if uid not in unique or v > unique[uid]:
+           unique[uid] = v
 
-        # If time already passed, remove from file
-        if remind_at <= now:
-            reminders.pop(uid, None)
-            save_reminders()
-            continue
+    reminders.clear()
+    reminders.update({str(k): v for k, v in unique.items()})
+    save_reminders()
 
-        # Otherwise schedule reminder
-        asyncio.create_task(schedule_reminder(uid, remind_at))
+# Re-schedule valid reminders
+for uid, iso_time in reminders.items():
+
 
     load_duel_cooldowns()
 
