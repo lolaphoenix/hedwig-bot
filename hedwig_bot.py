@@ -223,16 +223,6 @@ def load_duel_cooldowns():
         print("[Hedwig] Failed to load duel cooldowns:", e)
         duel_cooldowns = {}
 
-def save_duel_cooldowns():
-    try:
-        tmp = DUEL_COOLDOWNS_FILE + ".tmp"
-        serializable = {str(k): v.isoformat() for k, v in duel_cooldowns.items()}
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(serializable, f, indent=2)
-        os.replace(tmp, DUEL_COOLDOWNS_FILE)
-    except Exception as e:
-        print("[Hedwig] Failed to save duel cooldowns:", e)
-
 # -------------------------
 # Persistence Functions
 # -------------------------
@@ -256,6 +246,7 @@ def save_effects():
 last_daily = {}           # user_id -> datetime
 active_effects = {}       # user_id -> {"original_nick": str, "effects": [ ... ]}
 active_potions = {}       # user_id -> {"winning": int, "chosen": bool, "started_by": id}
+current_room_user = None  # user_id of whoever currently has access to the Room of Requirement 
 
 alohomora_cooldowns = {}    # target_user_id -> datetime
 reminders = {}  # {user_id: "2025-10-01T15:30:00"}  # store ISO datetime when daily is ready
@@ -1118,32 +1109,38 @@ async def cast(ctx, spell: str, member: discord.Member):
 
     # ---- Alohomora special (exclusive role + game) ----
     if spell == "alohomora":
+        global current_room_user
         now = now_utc()
 
-        # --- Global Alohomora cooldown (30 minutes) ---
-        global_last = alohomora_cooldowns.get("global_last_cast")
-        if global_last and now - global_last < timedelta(minutes=30):
-            remaining = timedelta(minutes=30) - (now - global_last)
-            mins, secs = divmod(int(remaining.total_seconds()), 60)
-            return await ctx.send(f"⏳ The Room of Requirement is still open! Try again in {mins}m {secs}s.")
+        # If someone already has the room
+        if current_room_user is not None:
+            occupant = get_member_from_id(current_room_user)
+            if occupant:
+                return await ctx.send(f"⏳ The Room of Requirement is still open for {occupant.display_name}. Wait until they type `!leaveroom`.")
+            else:
+                # occupant left the server or something went wrong
+                current_room_user = None
 
-        alohomora_cooldowns["global_last_cast"] = now
-
-        # --- Target-specific cooldown (still 24h per user) ---
+        # Target-specific cooldown (still 24h per user)
         last = alohomora_cooldowns.get(member.id)
         if last and now - last < timedelta(hours=24):
             return await ctx.send("⏳ Alohomora can only be cast on this user once every 24 hours.")
         alohomora_cooldowns[member.id] = now
 
-        # Ensure exclusivity: remove the Alohomora role from anyone who already has it
+        # Ensure exclusivity: remove Alohomora role from anyone who already has it
         role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
         if role:
             for m in member.guild.members:
                 if role in m.roles:
                     await safe_remove_role(m, role)
 
-        # charge + apply + give role + start game
+        # Immediately reserve the room BEFORE any await calls
+        current_room_user = member.id
+
+        # Now safely proceed
         remove_galleons_local(caster.id, cost)
+
+        # Apply effect and start game
         await apply_effect_to_member(member, spell, source="spell")
 
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
@@ -1304,9 +1301,9 @@ async def choose(ctx, number: int):
         final_choice = random.choice(opts)
     if final_choice == winning:
         add_galleons_local(user_id, 100)
-        await ctx.send(f"🎉 {ctx.author.mention} picked potion {number} and won **100 galleons**!")
+        await ctx.send(f"🎉 {ctx.author.mention} picked potion {number} and won **100 galleons**! Type !leaveroom to exit.")
     else:
-        await ctx.send(f"💨 {ctx.author.mention} picked potion {number}... nothing happened. Better luck next time!")
+        await ctx.send(f"💨 {ctx.author.mention} picked potion {number}... nothing happened. Better luck next time! Type !leaveroom to exit.")
     await finalize_room_after_choice(ctx.author)
     del active_potions[user_id]
 
@@ -1334,6 +1331,39 @@ async def trigger_game(ctx, member: discord.Member = None):
     await ctx.send(f"🧪 Testing potion game started for {member.mention} (Prefects test).")
 
 # -------------------------
+# COMMAND: LEAVE ROOM
+# -------------------------
+
+@bot.command()
+async def leaveroom(ctx, member: discord.Member = None):
+    """Leave the Room of Requirement — or force someone to leave (staff only)."""
+    global current_room_user
+
+    role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
+
+    # --- If a staff member uses it with a target ---
+    if member and is_staff_allowed(ctx.author):
+        if current_room_user != member.id:
+            return await ctx.send(f"❌ {member.display_name} is not currently in the Room of Requirement.")
+        if role and role in member.roles:
+            await safe_remove_role(member, role)
+        current_room_user = None
+        return await ctx.send(f"🪄 {ctx.author.display_name} has forced {member.display_name} to leave the Room of Requirement.")
+
+    # --- Regular self-use ---
+    member = member or ctx.author
+
+    if current_room_user != member.id:
+        return await ctx.send("❌ You can’t leave the Room of Requirement because you’re not inside it.")
+
+    if role and role in member.roles:
+        await safe_remove_role(member, role)
+
+    current_room_user = None
+    await ctx.send(f"🚪 {member.display_name} has left the Room of Requirement. It is now closed.")
+
+
+# -------------------------
 # CLEAR EFFECTS COMMAND
 # -------------------------
 
@@ -1348,7 +1378,7 @@ async def cleareffects(ctx, member: discord.Member = None):
     # Clear active effects from the user
     if target_member.id in active_effects:
         for e in list(active_effects[target_member.id]["effects"]):
-            await remove_effect(target_member, e["uid"])
+            await expire_effect(target_member, e["uid"])
         await ctx.send(f"🪄 All effects cleared for {target_member.display_name}.")
     else:
         await ctx.send(f"No active effects found for {target_member.display_name}.")
@@ -1441,6 +1471,16 @@ async def on_ready():
 
         if active_effects[member.id]["effects"]:
             new_effects[uid] = active_effects[member.id]
+
+    # --- Alohomora Safety Cleanup ---
+    role = discord.utils.get(guild.roles, name=ALOHOMORA_ROLE_NAME)
+    if role:
+        for m in role.members:
+            await safe_remove_role(m, role)
+    global current_room_user
+    current_room_user = None
+    alohomora_cooldowns.pop("global_last_cast", None)
+
 
     effects.clear()
     effects.update(new_effects)
