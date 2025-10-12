@@ -369,18 +369,23 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
     if gringotts:
         member = get_member_from_id(user_id)
         if member:
-            await gringotts.send(f"💰 {member.mention}, your daily galleons are ready to collect!")
+            embed = discord.Embed(
+                description=f"💰 {member.mention}, your daily galleons are ready to collect!",
+                color=0xFFD700  # Gold color
+            )
+            embed.set_image(url="https://media1.tenor.com/m/hDy33lPyiPgAAAAd/nickelback-how-you-remind-me.gif")
+            await gringotts.send(embed=embed)
 
     if recurring:
         # Schedule next reminder in 24h
-        next_time = now_utc() + timedelta(hours=24)
+        next_time = datetime.utcnow() + timedelta(hours=24)
         reminders[user_id] = next_time.isoformat()
         save_reminders()
 
         # Cancel old task (if running) and replace it
         existing_task = reminder_tasks.get(user_id)
         if existing_task and not existing_task.done():
-            existing_task.cancel()
+           existing_task.cancel()
 
         new_task = asyncio.create_task(schedule_reminder(user_id, next_time, recurring=True))
         reminder_tasks[user_id] = new_task
@@ -1044,7 +1049,7 @@ async def remindme(ctx):
     task = asyncio.create_task(schedule_reminder(user_id, remind_at, recurring=True))
     reminder_tasks[user_id] = task
 
-    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you every {hrs}h {mins}m when your daily is ready again.")
+    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you every {hrs}h {mins}m when your daily is ready again. You only have to do this once as it is a continuous reminder.")
 
 
 # -------------------------
