@@ -120,6 +120,35 @@ POINTS_FILE = os.path.join(DATA_DIR, "house_points.json")
 DUEL_COOLDOWNS_FILE = os.path.join(DATA_DIR, "duel_cooldowns.json")
 REMINDERS_FILE = os.path.join(DATA_DIR, "reminders.json")
 
+LAST_DAILY_FILE = os.path.join(DATA_DIR, "last_daily.json")
+
+def load_last_daily():
+    global last_daily
+    try:
+        if os.path.exists(LAST_DAILY_FILE):
+            with open(LAST_DAILY_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # convert iso strings back to datetimes
+            last_daily = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
+            print(f"[Hedwig] loaded {len(last_daily)} last_daily entries from {LAST_DAILY_FILE}")
+        else:
+            last_daily = {}
+            save_last_daily()
+            print(f"[Hedwig] created new last_daily file at {LAST_DAILY_FILE}")
+    except Exception as e:
+        print("[Hedwig] Failed to load last_daily:", e)
+        last_daily = {}
+
+def save_last_daily():
+    try:
+        tmp = LAST_DAILY_FILE + ".tmp"
+        serializable = {str(k): v.isoformat() for k, v in last_daily.items()}
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2)
+        os.replace(tmp, LAST_DAILY_FILE)
+    except Exception as e:
+        print("[Hedwig] Failed to save last_daily:", e)
+
 # in-memory state (will be loaded on start)
 galleons = {}                          # int_user_id -> int
 house_points = {h: 0 for h in house_emojis}
@@ -361,7 +390,7 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
         return  # cancelled safely (user replaced reminder)
 
     # Still in reminders?
-    if str(user_id) not in reminders and user_id not in reminders:
+    if user_id not in reminders:
         return
 
     # Send reminder in Gringotts
@@ -377,15 +406,18 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
             await gringotts.send(embed=embed)
 
     if recurring:
-        # Schedule next reminder in 24h
-        next_time = datetime.utcnow() + timedelta(hours=24)
+        # Use the user's last_daily time (when they collected)
+        last_time = last_daily.get(user_id, now_utc())
+        next_time = last_time + timedelta(hours=24)
+        if next_time <= now_utc():
+            next_time = now_utc() + timedelta(hours=24)
         reminders[user_id] = next_time.isoformat()
         save_reminders()
 
         # Cancel old task (if running) and replace it
         existing_task = reminder_tasks.get(user_id)
         if existing_task and not existing_task.done():
-           existing_task.cancel()
+            existing_task.cancel()
 
         new_task = asyncio.create_task(schedule_reminder(user_id, next_time, recurring=True))
         reminder_tasks[user_id] = new_task
@@ -962,6 +994,7 @@ async def daily(ctx):
     reward = random.randint(10, 30)
     add_galleons_local(user_id, reward)
     last_daily[user_id] = now
+    save_last_daily()
     gringotts = bot.get_channel(GRINGOTTS_CHANNEL_ID)
     if gringotts:
         await gringotts.send(f"💰 {ctx.author.display_name} collected daily allowance and now has {get_balance(user_id)} galleons!")
@@ -1049,7 +1082,33 @@ async def remindme(ctx):
     task = asyncio.create_task(schedule_reminder(user_id, remind_at, recurring=True))
     reminder_tasks[user_id] = task
 
-    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you every {hrs}h {mins}m when your daily is ready again. You only have to do this once as it is a continuous reminder.")
+    await ctx.send(f"⏳ Okay {ctx.author.display_name}, I’ll remind you every {hrs}h {mins}m when your daily is ready again. You only have to do this once as it is a continuous reminder. Type !cancelreminder to cancel your current reminder.")
+
+@bot.command()
+async def cancelreminder(ctx, member: discord.Member = None):
+    """Cancel your current daily reminder (mods can cancel others)."""
+    # Allow mods or Prefects to cancel for someone else
+    target = member or ctx.author
+    if member and not is_staff_allowed(ctx.author):
+        return await ctx.send("❌ Only staff can cancel reminders for others.")
+
+    user_id = target.id
+
+    # Check if they even have a reminder
+    if user_id not in reminders:
+        return await ctx.send(f"❌ {target.display_name} has no active reminder.")
+
+    # Cancel running asyncio task (if exists)
+    existing_task = reminder_tasks.get(user_id)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+        reminder_tasks.pop(user_id, None)
+
+    # Remove from persistence
+    reminders.pop(user_id, None)
+    save_reminders()
+
+    await ctx.send(f"🪶 Reminder cancelled for {target.display_name}.")
 
 
 # -------------------------
@@ -1431,6 +1490,7 @@ async def on_ready():
     load_house_points()
     load_effects()
     load_reminders()
+    load_last_daily()
 
     # Clean up duplicate reminder keys (string vs int)
     unique = {}
