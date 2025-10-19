@@ -346,13 +346,36 @@ async def safe_remove_role(member: discord.Member, role: discord.Role):
     except Exception as e:
         print("Error removing role:", e)
 
-async def set_nickname(member: discord.Member, nickname: str):
+async def set_nickname(ctx: commands.Context, member: discord.Member, new_nick: str):
+    """Safely attempts to set a member's nickname, handling permissions and length."""
+    
+    # 1. Check for Server Owner (Highest Immunity)
+    if member.id == member.guild.owner_id:
+        print(f"[Hedwig] WARNING: Cannot set nickname for Server Owner ({member.name}). Skipping edit.")
+        # Send the themed message back to the channel where the command originated
+        await ctx.send(
+            f"🦉 SQUAWK! I tried, but **{member.mention}** is protected by an **Unbreakable Vow**! My magic is canceled."
+        )
+        return
+
     try:
-        await member.edit(nick=nickname)
+        # 2. Check for Discord's 32-character limit
+        if new_nick and len(new_nick) > 32:
+            # Truncate the nickname if necessary
+            new_nick = new_nick[:32]
+        
+        # 3. Attempt the edit
+        await member.edit(nick=new_nick)
+        
     except discord.Forbidden:
-        print(f"Missing Manage Nicknames for {member}.")
+        # This catches hierarchy issues (if the bot isn't top role) or other permission errors.
+        print(f"[Hedwig] FATAL ERROR: Forbidden to change nickname for {member.name}. Check bot role hierarchy.")
+        # We assume the Server Owner message (above) handled the most common case.
+        await ctx.send(
+            f"⚠️ My magic fails! I lack the necessary permissions to cast that spell on **{member.mention}**."
+        )
     except Exception as e:
-        print("Error setting nickname:", e)
+        print(f"[Hedwig] CRITICAL ERROR: Failed to change nickname for {member.name}. Reason: {e}")
 
 def get_balance(user_id: int) -> int:
     return galleons.get(int(user_id), 0)
@@ -565,7 +588,15 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
 
     # Store clean nickname base once
     if member.id not in active_effects:
-        active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
+        # Load persistent data if it exists. Note: 'effects' uses string keys.
+        # This copies the state from file persistence (effects) to working memory (active_effects).
+        
+        if str(member.id) in effects:
+            # Load existing state from file persistence
+            active_effects[member.id] = effects[str(member.id)]
+        else:
+            # Initialize a new entry if no effects are found anywhere
+            active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
     # --- Special handling for Diffindo (truncate nickname) ---
     if effect_def.get("kind") == "truncate":
