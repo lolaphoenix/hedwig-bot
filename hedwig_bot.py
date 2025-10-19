@@ -1185,6 +1185,13 @@ async def cast(ctx, spell: str, member: discord.Member):
     caster = ctx.author
     spell = spell.lower()
 
+    # 🛑 INSERT SERVER OWNER CHECK HERE 🛑
+    if member.id == member.guild.owner_id:
+        await ctx.send(
+            f"🦉 SQUAWK! I tried, but **{member.mention}** is protected by an **Unbreakable Vow**! My magic is canceled."
+        )
+        return
+
     # basic validation
     if spell not in EFFECT_LIBRARY:
         return await ctx.send("❌ That spell doesn’t exist. Check the shop with `!shopspells`.")
@@ -1292,6 +1299,13 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     potion = potion.lower()
     member = member or ctx.author
     caster = ctx.author
+
+    # 🛑 INSERT SERVER OWNER CHECK HERE 🛑
+    if member.id == member.guild.owner_id:
+        await ctx.send(
+            f"🦉 SQUAWK! I tried, but **{member.mention}** is protected by an **Unbreakable Vow**! My magic is canceled."
+        )
+        return
 
     if potion not in POTION_LIBRARY:
         return await ctx.send("❌ That potion doesn’t exist. Check the shop with `!shoppotions`.")
