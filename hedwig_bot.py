@@ -346,17 +346,13 @@ async def safe_remove_role(member: discord.Member, role: discord.Role):
     except Exception as e:
         print("Error removing role:", e)
 
-async def set_nickname(ctx: commands.Context, member: discord.Member, new_nick: str):
+async def set_nickname(member: discord.Member, new_nick: str):
     """Safely attempts to set a member's nickname, handling permissions and length."""
     
     # 1. Check for Server Owner (Highest Immunity)
     if member.id == member.guild.owner_id:
         print(f"[Hedwig] WARNING: Cannot set nickname for Server Owner ({member.name}). Skipping edit.")
-        # Send the themed message back to the channel where the command originated
-        await ctx.send(
-            f"🦉 SQUAWK! I tried, but **{member.mention}** is protected by an **Unbreakable Vow**! My magic is canceled."
-        )
-        return
+        return # Cannot send user message here as there is no ctx available
 
     try:
         # 2. Check for Discord's 32-character limit
@@ -368,12 +364,8 @@ async def set_nickname(ctx: commands.Context, member: discord.Member, new_nick: 
         await member.edit(nick=new_nick)
         
     except discord.Forbidden:
-        # This catches hierarchy issues (if the bot isn't top role) or other permission errors.
+        # This catches hierarchy issues or other permission errors.
         print(f"[Hedwig] FATAL ERROR: Forbidden to change nickname for {member.name}. Check bot role hierarchy.")
-        # We assume the Server Owner message (above) handled the most common case.
-        await ctx.send(
-            f"⚠️ My magic fails! I lack the necessary permissions to cast that spell on **{member.mention}**."
-        )
     except Exception as e:
         print(f"[Hedwig] CRITICAL ERROR: Failed to change nickname for {member.name}. Reason: {e}")
 
