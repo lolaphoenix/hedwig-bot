@@ -644,6 +644,11 @@ async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
         await expire_effect(member, uid)
 
 async def expire_effect(member: discord.Member, uid: str):
+    global current_room_user
+    global active_potions
+    global effects
+    global active_effects
+    
     if member.id not in active_effects:
         effects.pop(str(member.id), None)
         save_effects()
@@ -663,6 +668,28 @@ async def expire_effect(member: discord.Member, uid: str):
     save_effects()
 
     if expired:
+        effect_name = expired.get("effect")
+        
+        # --- ALOHOMORA SPECIAL CLEANUP ---
+        if effect_name == "alohomora":
+            # 1. Remove the Alohomora role (even if it's already gone, safety check)
+            role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+            if role and role in member.roles:
+                await safe_remove_role(member, role)
+
+            # 2. Clear the global room reservation and potion game state
+            if current_room_user == member.id:
+                current_room_user = None
+                
+            if member.id in active_potions:
+                active_potions.pop(member.id)
+            
+            # 3. Announce room is available
+            owlry = bot.get_channel(OWLRY_CHANNEL_ID)
+            if owlry:
+                await owlry.send("📣 The Room of Requirement is now **empty**! The next person may try the spell.")
+        # -----------------------------------
+
         # --- Handle roles ---
         role_id = expired.get("role_id")
         if role_id:
@@ -705,7 +732,6 @@ async def expire_effect(member: discord.Member, uid: str):
 
     # Finally, refresh display/nick
     await update_member_display(member)
-
 
 async def recompute_nickname(member: discord.Member):
     data = active_effects.get(member.id)
@@ -1438,31 +1464,50 @@ async def trigger_game(ctx, member: discord.Member = None):
 @bot.command()
 async def leaveroom(ctx, member: discord.Member = None):
     """Leave the Room of Requirement — or force someone to leave (staff only)."""
-    global current_room_user
+    
+    target = member or ctx.author
+    
+    # 1. Find the Alohomora effect UID
+    alohomora_uid = None
+    if target.id in active_effects:
+        for entry in active_effects[target.id]["effects"]:
+            if entry.get("effect") == "alohomora":
+                alohomora_uid = entry["uid"]
+                break
 
-    role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
-
-    # --- If a staff member uses it with a target ---
-    if member and is_staff_allowed(ctx.author):
-        if current_room_user != member.id:
-            return await ctx.send(f"❌ {member.display_name} is not currently in the Room of Requirement.")
-        if role and role in member.roles:
-            await safe_remove_role(member, role)
-        current_room_user = None
-        return await ctx.send(f"🪄 {ctx.author.display_name} has forced {member.display_name} to leave the Room of Requirement.")
-
-    # --- Regular self-use ---
-    member = member or ctx.author
-
-    if current_room_user != member.id:
+    # Check if they are the current reserved user OR have an active effect
+    is_occupant = current_room_user == target.id or alohomora_uid is not None
+    
+    # --- Check for Invalid Use ---
+    if not is_occupant:
         return await ctx.send("❌ You can’t leave the Room of Requirement because you’re not inside it.")
 
-    if role and role in member.roles:
-        await safe_remove_role(member, role)
+    # --- Staff Force Leave ---
+    if member and is_staff_allowed(ctx.author) and member.id != ctx.author.id:
+        if alohomora_uid:
+            # Expire the effect and perform all cleanup
+            await expire_effect(target, alohomora_uid)
+        
+        # If no UID but they are current_room_user, the cleanup in expire_effect will handle it if we make it call it
+        return await ctx.send(f"🪄 {ctx.author.display_name} has forced **{target.display_name}** to leave the Room of Requirement.")
 
-    current_room_user = None
-    await ctx.send(f"🚪 {member.display_name} has left the Room of Requirement. It is now closed.")
-
+    # --- Regular Self-Use ---
+    if alohomora_uid:
+        # Expire the effect (which now handles role/state cleanup)
+        await expire_effect(target, alohomora_uid)
+        return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. It is now closed.")
+    
+    # Fallback for old/corrupted state where current_room_user is set but effect is gone
+    if current_room_user == target.id:
+        # Manually clear global state and role
+        global current_room_user
+        current_room_user = None
+        role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
+        if role and role in target.roles:
+            await safe_remove_role(target, role)
+        return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. (Manual cleanup executed).")
+    
+    return await ctx.send("❌ Something went wrong, but you appear to be out.")
 
 # -------------------------
 # CLEAR EFFECTS COMMAND
