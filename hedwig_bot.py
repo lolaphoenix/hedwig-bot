@@ -500,8 +500,8 @@ EFFECT_LIBRARY = {
         "description": "Adds flames to the target's nickname."
     },
     "alohomora": {
-        "cost": 50, "kind": "role_alohomora", "duration": 86400,
-        "description": "Grants access to the Room of Requirement for 24 hours and starts the potion game."
+        "cost": 50, "kind": "role_alohomora",
+        "description": "Grants access to the Room of Requirement and starts the potion game."
     },
     "lumos": {
         "cost": 15, "kind": "role_lumos",
@@ -877,23 +877,6 @@ async def announce_room_for(member: discord.Member):
     await room.send(f"🔮 Welcome {member.mention}!\nPick a potion with `!choose 1-5`")
     await room.send(" ".join(POTION_EMOJIS))
 
-async def finalize_room_after_choice(member: discord.Member):
-    role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-    if role and role in member.roles:
-        await safe_remove_role(member, role)
-    asyncio.create_task(purge_room_after_delay(1800))
-
-async def purge_room_after_delay(delay_seconds: int):
-    await asyncio.sleep(delay_seconds)
-    room = bot.get_channel(ROOM_OF_REQUIREMENT_ID)
-    if room:
-        try:
-            await room.purge(limit=100)
-        except discord.Forbidden:
-            print("Missing permissions to purge room.")
-        except Exception as e:
-            print("Error purging room:", e)
-
 # -------------------------
 # COMMANDS: HELP / MOD
 # -------------------------
@@ -1206,7 +1189,7 @@ async def cast(ctx, spell: str, member: discord.Member):
     if "DUELING_CLUB_ID" in globals():
         allowed.add(DUELING_CLUB_ID)
     if ctx.channel.id not in allowed:
-        return await ctx.send("❌ This command can only be used in the Dueling Club or the Owlry channel.")
+        return await ctx.send("❌ This command can only be used in the Dueling Club channel.")
 
     caster = ctx.author
     spell = spell.lower()
@@ -1398,18 +1381,22 @@ async def drink(ctx, potion: str, member: discord.Member = None):
 # -------------------------
 @bot.command()
 async def choose(ctx, number: int):
+    # Ensure constants are available (ALOHOMORA_ROLE_NAME, ROOM_OF_REQUIREMENT_ID are available)
     if ctx.channel.id != ROOM_OF_REQUIREMENT_ID:
         return await ctx.send(f"🚪 Please use this command in <#{ROOM_OF_REQUIREMENT_ID}>.")
     if number < 1 or number > 5:
         return await ctx.send("🚫 Pick a number between 1 and 5.")
+    
     user_id = ctx.author.id
     if user_id not in active_potions:
         return await ctx.send("❌ You don’t have an active potion challenge. Cast Alohomora or drink a potion first.")
     if active_potions[user_id]["chosen"]:
         return await ctx.send("🧪 You already chose a potion for this challenge.")
+        
     active_potions[user_id]["chosen"] = True
     winning = active_potions[user_id]["winning"]
-    # luck modifiers
+    
+    # luck modifiers (rest of your existing logic)
     luck = 0.0
     data = active_effects.get(user_id)
     if data:
@@ -1418,20 +1405,24 @@ async def choose(ctx, number: int):
                 luck += 0.5
             if e.get("effect") == "draughtlivingdeath":
                 luck -= 0.5
+                
     forced_win = (luck > 0 and random.random() < luck)
     forced_miss = (luck < 0 and random.random() < abs(luck))
+    
     final_choice = number
     if forced_win:
         final_choice = winning
     elif forced_miss:
         opts = [i for i in range(1, 6) if i != winning]
         final_choice = random.choice(opts)
+        
     if final_choice == winning:
         add_galleons_local(user_id, 100)
-        await ctx.send(f"🎉 {ctx.author.mention} picked potion {number} and won **100 galleons**! Type !leaveroom to exit.")
+        await ctx.send(f"🎉 {ctx.author.mention} picked potion {number} and won **100 galleons**! Type `!leaveroom` to exit.")
     else:
-        await ctx.send(f"💨 {ctx.author.mention} picked potion {number}... nothing happened. Better luck next time! Type !leaveroom to exit.")
-    await finalize_room_after_choice(ctx.author)
+        await ctx.send(f"💨 {ctx.author.mention} picked potion {number}... nothing happened. Better luck next time! Type `!leaveroom` to exit.")
+        
+    # Removed the call to finalize_room_after_choice
     del active_potions[user_id]
 
 # -------------------------
@@ -1460,17 +1451,20 @@ async def trigger_game(ctx, member: discord.Member = None):
 # -------------------------
 # COMMAND: LEAVE ROOM
 # -------------------------
-
 @bot.command()
 async def leaveroom(ctx, member: discord.Member = None):
     """Leave the Room of Requirement — or force someone to leave (staff only)."""
     
-    # 🛑 FIX: This global declaration must be here, at the start of the function!
     global current_room_user
     
+    # Check if command is used in the correct channel
+    if ctx.channel.id != ROOM_OF_REQUIREMENT_ID:
+        return await ctx.send("You can only use `!leaveroom` inside the Room of Requirement.")
+        
     target = member or ctx.author
     
     # 1. Find the Alohomora effect UID
+    # This is essential because expire_effect needs a UID, even for a manual remove.
     alohomora_uid = None
     if target.id in active_effects:
         for entry in active_effects[target.id]["effects"]:
@@ -1481,33 +1475,56 @@ async def leaveroom(ctx, member: discord.Member = None):
     # Check if they are the current reserved user OR have an active effect
     is_occupant = current_room_user == target.id or alohomora_uid is not None
     
-    # --- Check for Invalid Use ---
     if not is_occupant:
         return await ctx.send("❌ You can’t leave the Room of Requirement because you’re not inside it.")
 
     # --- Staff Force Leave ---
     if member and member.id != ctx.author.id and is_staff_allowed(ctx.author):
+        # We perform the cleanup via expire_effect, which removes the role/state
         if alohomora_uid:
             await expire_effect(target, alohomora_uid)
-        else:
-            # Fallback for old/corrupted state
-            if current_room_user == target.id:
-                current_room_user = None
             
-        return await ctx.send(f"🪄 {ctx.author.display_name} has forced **{target.display_name}** to leave the Room of Requirement.")
+        # The room purge is necessary and must be done after state/role cleanup
+        try:
+            await ctx.channel.purge(limit=100)
+        except Exception:
+            pass # Ignore errors here, state cleanup is more critical
+            
+        return await ctx.send(f"🪄 {ctx.author.display_name} has forced **{target.display_name}** to leave the Room of Requirement. The room is now clean.")
 
     # --- Regular Self-Use ---
     if alohomora_uid:
-        # Expire the effect (which now handles role/state cleanup)
+        # 2. Expire the effect: this handles role removal, Dueling Club announcement,
+        # and memory cleanup (active_effects, current_room_user, active_potions).
         await expire_effect(target, alohomora_uid)
-        return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. It is now closed.")
+        
+        # 3. PURGE ROOM MESSAGES
+        try:
+            # Purge up to the last 100 messages in the room
+            await ctx.channel.purge(limit=100)
+        except Exception:
+            pass # Ignore errors if bot lacks permissions
+
+        # 4. Final message to the Dueling Club channel (where they will reappear)
+        dueling_club = bot.get_channel(DUELING_CLUB_ID)
+        if dueling_club:
+             return await dueling_club.send(f"🚪 **{target.display_name}** has left the Room of Requirement. The room vanishes, and you find yourself back here in the Dueling Club.")
+
+        return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. The room is closed.")
     
-    # Final Fallback for corrupted state (current_room_user set but UID is missing)
+    # Final Fallback for corrupted state
     if current_room_user == target.id:
         current_room_user = None
+        # Manually remove role and purge messages for safety
         role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
         if role and role in target.roles:
             await safe_remove_role(target, role)
+        
+        try:
+            await ctx.channel.purge(limit=100)
+        except Exception:
+            pass
+            
         return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. (Manual cleanup executed).")
     
     return await ctx.send("❌ Something went wrong, but you appear to be out.")
