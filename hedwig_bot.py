@@ -684,10 +684,10 @@ async def expire_effect(member: discord.Member, uid: str):
             if member.id in active_potions:
                 active_potions.pop(member.id)
             
-            # 3. Announce room is available
-            owlry = bot.get_channel(OWLRY_CHANNEL_ID)
-            if owlry:
-                await owlry.send("📣 The Room of Requirement is now **empty**! The next person may try the spell.")
+            # 3. Announce room is available (MOVED TO DUELING CLUB)
+            dueling_club = bot.get_channel(DUELING_CLUB_ID)
+            if dueling_club:
+                await dueling_club.send("📣 The Room of Requirement is now **empty**! The next person may try the spell.")
         # -----------------------------------
 
         # --- Handle roles ---
@@ -1461,11 +1461,14 @@ async def trigger_game(ctx, member: discord.Member = None):
 # COMMAND: LEAVE ROOM
 # -------------------------
 
+# -------------------------
+# COMMAND: LEAVE ROOM
+# -------------------------
+
 @bot.command()
 async def leaveroom(ctx, member: discord.Member = None):
     """Leave the Room of Requirement — or force someone to leave (staff only)."""
     
-    # 🛑 FIX: The global declaration MUST be the first line before using the variable
     global current_room_user
     
     target = member or ctx.author
@@ -1486,13 +1489,12 @@ async def leaveroom(ctx, member: discord.Member = None):
         return await ctx.send("❌ You can’t leave the Room of Requirement because you’re not inside it.")
 
     # --- Staff Force Leave ---
-    # Staff doesn't need to be the target, so we check if a member was specified AND staff is authorized
     if member and member.id != ctx.author.id and is_staff_allowed(ctx.author):
         # By calling expire_effect, we ensure all cleanup (role, global state, announcement) happens
         if alohomora_uid:
             await expire_effect(target, alohomora_uid)
         else:
-            # Fallback for corrupted state where current_room_user is set but effect is gone
+            # Fallback for old/corrupted state
             if current_room_user == target.id:
                 current_room_user = None
             
@@ -1500,8 +1502,11 @@ async def leaveroom(ctx, member: discord.Member = None):
 
     # --- Regular Self-Use ---
     if alohomora_uid:
-        # Expire the effect (which now handles role/state cleanup)
+        # Expire the effect (this performs the full cleanup, including nickname refresh)
+        # We use 'await' and then send the message immediately after.
         await expire_effect(target, alohomora_uid)
+        
+        # This message will ONLY send if the await above completes successfully.
         return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. It is now closed.")
     
     # Final Fallback for corrupted state (current_room_user set but UID is missing)
