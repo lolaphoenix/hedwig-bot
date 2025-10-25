@@ -1206,7 +1206,7 @@ async def cast(ctx, spell: str, member: discord.Member):
     if "DUELING_CLUB_ID" in globals():
         allowed.add(DUELING_CLUB_ID)
     if ctx.channel.id not in allowed:
-        return await ctx.send("❌ This command can only be used in the Dueling Club or the Owlry channel.")
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
 
     caster = ctx.author
     spell = spell.lower()
@@ -1465,9 +1465,6 @@ async def trigger_game(ctx, member: discord.Member = None):
 async def leaveroom(ctx, member: discord.Member = None):
     """Leave the Room of Requirement — or force someone to leave (staff only)."""
     
-    # 🛑 FIX: The global declaration MUST be the first thing to touch the variable
-    global current_room_user
-    
     target = member or ctx.author
     
     # 1. Find the Alohomora effect UID
@@ -1486,25 +1483,24 @@ async def leaveroom(ctx, member: discord.Member = None):
         return await ctx.send("❌ You can’t leave the Room of Requirement because you’re not inside it.")
 
     # --- Staff Force Leave ---
-    if member and member.id != ctx.author.id and is_staff_allowed(ctx.author):
+    if member and is_staff_allowed(ctx.author) and member.id != ctx.author.id:
         if alohomora_uid:
             # Expire the effect and perform all cleanup
             await expire_effect(target, alohomora_uid)
-        else:
-            # Fallback for old/corrupted state
-            current_room_user = None # Can assign directly since 'global' is now at the top
-            
+        
+        # If no UID but they are current_room_user, the cleanup in expire_effect will handle it if we make it call it
         return await ctx.send(f"🪄 {ctx.author.display_name} has forced **{target.display_name}** to leave the Room of Requirement.")
 
     # --- Regular Self-Use ---
     if alohomora_uid:
         # Expire the effect (which now handles role/state cleanup)
         await expire_effect(target, alohomora_uid)
-        # The announcement is handled by expire_effect
-        return
+        return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. It is now closed.")
     
-    # Final Fallback for corrupted state where UID is missing but reservation is set
+    # Fallback for old/corrupted state where current_room_user is set but effect is gone
     if current_room_user == target.id:
+        # Manually clear global state and role
+        global current_room_user
         current_room_user = None
         role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
         if role and role in target.roles:

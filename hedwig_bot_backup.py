@@ -1206,7 +1206,7 @@ async def cast(ctx, spell: str, member: discord.Member):
     if "DUELING_CLUB_ID" in globals():
         allowed.add(DUELING_CLUB_ID)
     if ctx.channel.id not in allowed:
-        return await ctx.send("❌ This command can only be used in the Dueling Club or the Owlry channel.")
+        return await ctx.send("❌ This command can only be used in the Dueling Club.")
 
     caster = ctx.author
     spell = spell.lower()
