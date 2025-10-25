@@ -1461,14 +1461,11 @@ async def trigger_game(ctx, member: discord.Member = None):
 # COMMAND: LEAVE ROOM
 # -------------------------
 
-# -------------------------
-# COMMAND: LEAVE ROOM
-# -------------------------
-
 @bot.command()
 async def leaveroom(ctx, member: discord.Member = None):
     """Leave the Room of Requirement — or force someone to leave (staff only)."""
     
+    # 🛑 FIX: This global declaration must be here, at the start of the function!
     global current_room_user
     
     target = member or ctx.author
@@ -1490,7 +1487,6 @@ async def leaveroom(ctx, member: discord.Member = None):
 
     # --- Staff Force Leave ---
     if member and member.id != ctx.author.id and is_staff_allowed(ctx.author):
-        # By calling expire_effect, we ensure all cleanup (role, global state, announcement) happens
         if alohomora_uid:
             await expire_effect(target, alohomora_uid)
         else:
@@ -1502,11 +1498,8 @@ async def leaveroom(ctx, member: discord.Member = None):
 
     # --- Regular Self-Use ---
     if alohomora_uid:
-        # Expire the effect (this performs the full cleanup, including nickname refresh)
-        # We use 'await' and then send the message immediately after.
+        # Expire the effect (which now handles role/state cleanup)
         await expire_effect(target, alohomora_uid)
-        
-        # This message will ONLY send if the await above completes successfully.
         return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. It is now closed.")
     
     # Final Fallback for corrupted state (current_room_user set but UID is missing)
