@@ -687,7 +687,7 @@ async def expire_effect(member: discord.Member, uid: str):
             # 3. Announce room is available (MOVED TO DUELING CLUB)
             dueling_club = bot.get_channel(DUELING_CLUB_ID)
             if dueling_club:
-                await dueling_club.send("📣 The Room of Requirement is now **empty**! The next person may try the spell.")
+                await dueling_club.send("You hear a soft rumbling inside of the walls...")
         # -----------------------------------
 
         # --- Handle roles ---
