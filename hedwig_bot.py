@@ -660,10 +660,10 @@ async def expire_effect(member: discord.Member, uid: str):
         e for e in active_effects[member.id]["effects"] if e["uid"] != uid
     ]
 
+    # --- STATE AND PERSISTENCE CLEANUP ---
     if active_effects.get(member.id, {}).get("effects"):
         effects[str(member.id)] = active_effects[member.id]
     else:
-        # Restore the nickname if necessary (recompute_nickname handles this)
         active_effects.pop(member.id, None) 
         effects.pop(str(member.id), None)
         
@@ -672,27 +672,32 @@ async def expire_effect(member: discord.Member, uid: str):
     if expired:
         effect_name = expired.get("effect")
         
-        # --- ALOHOMORA SPECIAL CLEANUP (State Only) ---
+        # --- ALOHOMORA SPECIAL CLEANUP (Definitive Role Removal + State) ---
         if effect_name == "alohomora":
-            # 🛑 NOTE: Role removal is now handled by the generic 'Handle roles' block below,
-            # which uses the role_id we stored during the !cast command.
-            
-            # 1. Clear the global room reservation and potion game state
+            # 🪄 1. **THE FIX:** Remove the Alohomora role explicitly by ID
+            alohomora_rid = ROLE_IDS.get("alohomora") 
+            if alohomora_rid:
+                role = member.guild.get_role(alohomora_rid)
+                if role and role in member.roles:
+                    await safe_remove_role(member, role) # This must work now.
+
+            # 2. Clear the global room reservation and potion game state
             if current_room_user == member.id:
                 current_room_user = None
                 
             if member.id in active_potions:
                 active_potions.pop(member.id)
             
-            # 2. Announce room is available (MOVED TO DUELING CLUB)
+            # 3. Announce room is available
             dueling_club = bot.get_channel(DUELING_CLUB_ID)
             if dueling_club:
                 await dueling_club.send("You hear a soft rumbling inside of the walls...")
         # -----------------------------------
 
-        # --- Handle roles (This handles Alohomora via the stored role_id) ---
+        # --- Handle generic roles (for timed effects that stored a role_id) ---
+        # This block now handles all non-alohomora roles that stored a role_id
         role_id = expired.get("role_id")
-        if role_id:
+        if role_id and role_id != ROLE_IDS.get("alohomora"): # Avoid double-removal check
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 await safe_remove_role(member, role)
