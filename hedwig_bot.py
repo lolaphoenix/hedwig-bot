@@ -924,7 +924,7 @@ async def hedwigmod(ctx):
         "`!givegalleons @user <amount>` — Give galleons to a user (Prefects & Head of House only)\n"
         "`!resetgalleons` — Clear all galleon balances globally\n"
         "`!clear [number]` — Clears a number of messages (default 100) from the Dueling Club or Room of Requirement channels.\n"
-        "`!cast finite @user`  — Removes most recent spell/potion from a user\n"
+        "`!cast finite @user`  — Removes most recent spell/potion from a user\n"
         "`!trigger-game [@user]` — Prefects-only test: starts the Alohomora game for a user\n"
     )
     await ctx.send(msg)
@@ -1206,7 +1206,7 @@ async def cast(ctx, spell: str, member: discord.Member):
     if "DUELING_CLUB_ID" in globals():
         allowed.add(DUELING_CLUB_ID)
     if ctx.channel.id not in allowed:
-        return await ctx.send("❌ This command can only be used in the Dueling Club.")
+        return await ctx.send("❌ This command can only be used in the Dueling Club or the Owlry channel.")
 
     caster = ctx.author
     spell = spell.lower()
@@ -1465,6 +1465,9 @@ async def trigger_game(ctx, member: discord.Member = None):
 async def leaveroom(ctx, member: discord.Member = None):
     """Leave the Room of Requirement — or force someone to leave (staff only)."""
     
+    # 🛑 FIX: The global declaration MUST be the first line before using the variable
+    global current_room_user
+    
     target = member or ctx.author
     
     # 1. Find the Alohomora effect UID
@@ -1483,12 +1486,16 @@ async def leaveroom(ctx, member: discord.Member = None):
         return await ctx.send("❌ You can’t leave the Room of Requirement because you’re not inside it.")
 
     # --- Staff Force Leave ---
-    if member and is_staff_allowed(ctx.author) and member.id != ctx.author.id:
+    # Staff doesn't need to be the target, so we check if a member was specified AND staff is authorized
+    if member and member.id != ctx.author.id and is_staff_allowed(ctx.author):
+        # By calling expire_effect, we ensure all cleanup (role, global state, announcement) happens
         if alohomora_uid:
-            # Expire the effect and perform all cleanup
             await expire_effect(target, alohomora_uid)
-        
-        # If no UID but they are current_room_user, the cleanup in expire_effect will handle it if we make it call it
+        else:
+            # Fallback for corrupted state where current_room_user is set but effect is gone
+            if current_room_user == target.id:
+                current_room_user = None
+            
         return await ctx.send(f"🪄 {ctx.author.display_name} has forced **{target.display_name}** to leave the Room of Requirement.")
 
     # --- Regular Self-Use ---
@@ -1497,10 +1504,8 @@ async def leaveroom(ctx, member: discord.Member = None):
         await expire_effect(target, alohomora_uid)
         return await ctx.send(f"🚪 **{target.display_name}** has left the Room of Requirement. It is now closed.")
     
-    # Fallback for old/corrupted state where current_room_user is set but effect is gone
+    # Final Fallback for corrupted state (current_room_user set but UID is missing)
     if current_room_user == target.id:
-        # Manually clear global state and role
-        global current_room_user
         current_room_user = None
         role = discord.utils.get(ctx.guild.roles, name=ALOHOMORA_ROLE_NAME)
         if role and role in target.roles:
