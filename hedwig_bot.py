@@ -39,6 +39,7 @@ ROLE_IDS = {
     "ravenclaw": 1398803644236955729,
     "hufflepuff": 1409203862757310534,
     "gryffindor": 1409203925416149105,
+    "alohomora": 1413134328690638858, # 🪄 Alohomora Role ID added
 }
 ALOHOMORA_ROLE_NAME = "Alohomora"
 
@@ -662,35 +663,34 @@ async def expire_effect(member: discord.Member, uid: str):
     if active_effects.get(member.id, {}).get("effects"):
         effects[str(member.id)] = active_effects[member.id]
     else:
+        # Restore the nickname if necessary (recompute_nickname handles this)
+        active_effects.pop(member.id, None) 
         effects.pop(str(member.id), None)
-        active_effects.pop(member.id, None)
-
+        
     save_effects()
 
     if expired:
         effect_name = expired.get("effect")
         
-        # --- ALOHOMORA SPECIAL CLEANUP ---
+        # --- ALOHOMORA SPECIAL CLEANUP (State Only) ---
         if effect_name == "alohomora":
-            # 1. Remove the Alohomora role (even if it's already gone, safety check)
-            role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
-            if role and role in member.roles:
-                await safe_remove_role(member, role)
-
-            # 2. Clear the global room reservation and potion game state
+            # 🛑 NOTE: Role removal is now handled by the generic 'Handle roles' block below,
+            # which uses the role_id we stored during the !cast command.
+            
+            # 1. Clear the global room reservation and potion game state
             if current_room_user == member.id:
                 current_room_user = None
                 
             if member.id in active_potions:
                 active_potions.pop(member.id)
             
-            # 3. Announce room is available (MOVED TO DUELING CLUB)
+            # 2. Announce room is available (MOVED TO DUELING CLUB)
             dueling_club = bot.get_channel(DUELING_CLUB_ID)
             if dueling_club:
                 await dueling_club.send("You hear a soft rumbling inside of the walls...")
         # -----------------------------------
 
-        # --- Handle roles ---
+        # --- Handle roles (This handles Alohomora via the stored role_id) ---
         role_id = expired.get("role_id")
         if role_id:
             role = member.guild.get_role(role_id)
@@ -1214,7 +1214,8 @@ async def cast(ctx, spell: str, member: discord.Member):
     if spell == "alohomora":
         global current_room_user
         now = now_utc()
-
+        alohomora_id = ROLE_IDS.get("alohomora") # Get the ID
+        
         # If someone already has the room
         if current_room_user is not None:
             occupant = get_member_from_id(current_room_user)
@@ -1231,7 +1232,9 @@ async def cast(ctx, spell: str, member: discord.Member):
         alohomora_cooldowns[member.id] = now
 
         # Ensure exclusivity: remove Alohomora role from anyone who already has it
-        role = discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+        # Find the role by ID or fall back to name
+        role = member.guild.get_role(alohomora_id) if alohomora_id else discord.utils.get(member.guild.roles, name=ALOHOMORA_ROLE_NAME)
+        
         if role:
             for m in member.guild.members:
                 if role in m.roles:
@@ -1243,12 +1246,20 @@ async def cast(ctx, spell: str, member: discord.Member):
         # Now safely proceed
         remove_galleons_local(caster.id, cost)
 
-        # Apply effect and start game
-        await apply_effect_to_member(member, spell, source="spell")
+        # Store role ID for cleanup
+        effect_meta = {}
+        if alohomora_id:
+            effect_meta["role_id"] = alohomora_id
+            
+        # Apply effect and start game. This is where the cleanup data is set.
+        await apply_effect_to_member(member, spell, source="spell", meta=effect_meta) 
 
         active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": caster.id}
+        
+        # Add the role using the found 'role' object
         if role:
             await safe_add_role(member, role)
+            
         await announce_room_for(member)
 
         await ctx.send(f"✨ {caster.display_name} cast **Alohomora** on {member.display_name}! The Room of Requirement is open.")
