@@ -1686,30 +1686,62 @@ if not TOKEN:
 @tasks.loop(minutes=5)
 async def cleanup_effects():
     """Remove expired effects from memory and save file."""
-    now = datetime.utcnow()
-    expired = []
-
-    for uid, data in list(effects.items()):
-        new_effects = []
+    now = now_utc()
+    to_expire = []
+    
+    # 1. Gather all expired effects
+    # We iterate over a copy of effects.items() for safe mutation
+    for member_uid, data in list(effects.items()):
+        
+        # A list to hold effects that are NOT expired
+        new_effects_list = []
+        
         for e in data.get("effects", []):
+            expires_at = e.get("expires_at")
+            
+            # --- FIX: Skip permanent effects and malformed effects ---
+            if not expires_at:
+                # This effect has no expiration date (e.g., Alohomora). Keep it.
+                new_effects_list.append(e)
+                continue
+            
+            # --- Process timed effects ---
             try:
-                exp_time = datetime.fromisoformat(e["expires_at"])
+                exp_time = datetime.fromisoformat(expires_at)
             except Exception:
+                # Should not happen, but if timestamp is malformed, treat as permanent/keep it
+                new_effects_list.append(e)
                 continue
 
             if now >= exp_time:
-                expired.append((uid, e["uid"]))
+                # The effect has expired. Add to the list for cleanup.
+                to_expire.append((member_uid, e["uid"]))
             else:
-                new_effects.append(e)
+                # The effect is still active. Keep it.
+                new_effects_list.append(e)
 
-        data["effects"] = new_effects
-        if not new_effects:
-            effects.pop(uid, None)
+        # 2. Update the user's effects list in memory
+        if not new_effects_list:
+            effects.pop(member_uid, None)
+        else:
+            data["effects"] = new_effects_list
+            effects[member_uid] = data
 
-    if expired:
-        save_effects()
-        print(f"[Hedwig] Cleaned up {len(expired)} expired effects")
+    # 3. Call the external cleanup function for expired items
+    for member_uid_str, uid in to_expire:
+        # We need to ensure we can get the member object
+        member = bot.get_guild(SERVER_ID).get_member(int(member_uid_str))
+        if member:
+            await expire_effect(member, uid)
+        
+    save_effects()
 
+    # Log to console that cleanup finished
+    # print("[Hedwig] Cleanup finished.") 
+    
+    # This task *should not* re-apply roles. Re-application happens in update_member_display,
+    # which is called by expire_effect. Since expire_effect is now only called for 
+    # *truly* expired effects (and via !leaveroom), the issue should be gone.
 
 
 bot.run(TOKEN)
