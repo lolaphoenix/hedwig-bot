@@ -1313,9 +1313,6 @@ async def cast(ctx, spell: str, member: discord.Member):
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
 
-# -------------------------
-# COMMAND: DRINK (potions)
-# -------------------------
 @bot.command()
 async def drink(ctx, potion: str, member: discord.Member = None):
     if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
@@ -1343,16 +1340,20 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     # Check for the 24-hour cooldown on Polyjuice
     if pd.get("kind") == "potion_polyjuice":
         polyjuice_effect = next((e for e in active_effects.get(member.id, {}).get("effects", [])
-                                 if e.get("effect") == "polyjuice"), None)
-
+                                     if e.get("effect") == "polyjuice" or e.get("effect") == "polyfail_cat"), None)
+        
         if polyjuice_effect:
-            expires_at = datetime.fromisoformat(polyjuice_effect["expires_at"])
-            # Check if the effect has expired. If it hasn't, the user is still in the cooldown period.
-            if datetime.utcnow() < expires_at:
-                remaining_time = expires_at - datetime.utcnow()
-                hours, remainder = divmod(remaining_time.seconds, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                return await ctx.send(f"You try to imbibe another Polyjuice, but can't get it down. 🤢 You must wait {hours} hours, {minutes} minutes, and {seconds} seconds before you can drink it again.")
+            try:
+                expires_at = datetime.fromisoformat(polyjuice_effect["expires_at"])
+                # Check if the effect has expired. If it hasn't, the user is still in the cooldown period.
+                if datetime.utcnow() < expires_at:
+                    remaining_time = expires_at - datetime.utcnow()
+                    hours, remainder = divmod(remaining_time.seconds, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    return await ctx.send(f"You try to imbibe another Polyjuice, but can't get it down. 🤢 You must wait {hours} hours, {minutes} minutes, and {seconds} seconds before you can drink it again.")
+            except:
+                # If there's no expiration time (the bugged state), assume they can't drink yet.
+                return await ctx.send("🤢 You still feel a residual effect from the last Polyjuice. Please wait a moment.")
 
     # Bezoar (cleanse potions only)
     if pd["kind"] == "potion_bezoar":
@@ -1372,17 +1373,24 @@ async def drink(ctx, potion: str, member: discord.Member = None):
 
     # Polyjuice special-handling
     if pd["kind"] == "potion_polyjuice":
+        # Calculate the 24-hour expiration time for the new effect (THIS IS THE FIX)
+        duration = timedelta(hours=24)
+        expiration_time = (datetime.utcnow() + duration).isoformat()
+        
         remove_galleons_local(caster.id, cost) # Remove galleons for a successful polyjuice
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
         user_house = get_user_house(member)
+        
         if user_house == chosen:
             # Potion backfired since user already has the house role
-            await apply_effect_to_member(member, "polyfail_cat", source="potion")
+            # FIX: Passed the expiration_time
+            await apply_effect_to_member(member, "polyfail_cat", source="potion", expires_at=expiration_time)
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name}... it misfired! You get whiskers 🐱 for 24 hours.")
         else:
             meta = {"polyhouse": chosen}
-            await apply_effect_to_member(member, "polyjuice", source="potion", meta=meta)
+            # FIX: Passed the expiration_time
+            await apply_effect_to_member(member, "polyjuice", source="potion", meta=meta, expires_at=expiration_time)
             display_house = chosen.capitalize()
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
         return
