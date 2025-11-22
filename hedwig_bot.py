@@ -508,23 +508,33 @@ EFFECT_LIBRARY = {
         "cost": 15, "kind": "role_lumos",
         "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
         "suffix_unicode": "⭐",
-	"duration": 86400,
+	    "duration": 86400,
         "description": "Gives the Lumos role and a star prefix to the nickname."
     },
-    # FIX: Polyjuice effect definition added here to prevent runtime crash.
-    "polyjuice": { 
+    # --- CONSOLIDATED POLYJUICE EFFECTS (Successful and Misfire) ---
+    "polyjuice": {
         "emoji": "<:polyjuice:1413679815520944158>",
         "cost": 0,
         "kind": "potion_polyjuice", 
         "duration": 86400,
         "description": "Successful Polyjuice: Grants temporary house role access."
     },
-    # The 'finite' entry must follow a comma after the previous entry.
+    "polyfail_cat": {
+        "emoji": "🐱",
+        "cost": 0,
+        "kind": "nickname",
+        "prefix": "🐱",
+        "prefix_unicode": "🐱",
+        "suffix": "",
+        "duration": 86400,
+        "description": "Polyjuice misfire! Get whiskers for 24 hours.",
+    },
+    # --- END ---
     "finite": {
         "cost": 10, "kind": "finite", "duration": 0,
         "description": "Finite: removes the most recent spell/potion from a user when cast."
     },
-} 
+} # <--- IMPORTANT: Note the absence of a comma on the last entry ("finite")
 
 POTION_LIBRARY = {
     "felixfelicis": {
@@ -552,17 +562,6 @@ POTION_LIBRARY = {
         "cost": 30, "kind": "potion_bezoar",
         "description": "Bezoar: removes active potion effects from the target instantly."
     },
-}
-
-EFFECT_LIBRARY["polyfail_cat"] = {
-    "emoji": "🐱",
-    "cost": 0,
-    "kind": "nickname",
-    "prefix": "🐱",
-    "prefix_unicode": "🐱",
-    "suffix": "",
-    "duration": 86400,
-    "description": "Polyjuice misfire! Get whiskers for 24 hours.",
 }
 
 # -------------------------
