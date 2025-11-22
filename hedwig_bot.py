@@ -1313,6 +1313,10 @@ async def cast(ctx, spell: str, member: discord.Member):
     await apply_effect_to_member(member, spell, source="spell")
     await ctx.send(f"✨ {caster.display_name} cast **{spell.capitalize()}** on {member.display_name}!")
 
+# -------------------------
+# COMMAND: DRINK (potions)
+# -------------------------
+
 @bot.command()
 async def drink(ctx, potion: str, member: discord.Member = None):
     if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
@@ -1337,7 +1341,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to buy that potion!")
 
-# Check for the 24-hour cooldown on Polyjuice
+    # --- 1. Polyjuice Cooldown Check (Must run for all Polyjuice attempts) ---
     if pd.get("kind") == "potion_polyjuice":
         # Check for BOTH success ("polyjuice") and misfire ("polyfail_cat") effects
         polyjuice_effect = next((e for e in active_effects.get(member.id, {}).get("effects", [])
@@ -1345,7 +1349,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
         
         if polyjuice_effect:
             try:
-                # 🪄 FIX 1: Use dt.datetime for robust parsing
+                # Use dt.datetime for robust parsing
                 expires_at = dt.datetime.fromisoformat(polyjuice_effect["expires_at"])
                 
                 # Check if the effect has expired.
@@ -1355,40 +1359,17 @@ async def drink(ctx, potion: str, member: discord.Member = None):
                     minutes, seconds = divmod(remainder, 60)
                     return await ctx.send(f"You try to imbibe another Polyjuice, but can't get it down. 🤢 You must wait {hours} hours, {minutes} minutes, and {seconds} seconds before you can drink it again.")
             except KeyError:
-                # If "expires_at" is missing (the old bug), we assume the effect is still active.
+                # If "expires_at" is missing (the old bug), this prevents a crash and informs the user.
                 return await ctx.send("🤢 You still feel a residual effect from a bugged Polyjuice. Please wait for the effect to be manually cleared or drink a Bezoar.")
             except Exception as e:
                 # Handle other parsing errors
                 print(f"Error parsing Polyjuice expiration time: {e}")
                 pass 
 
-
-    # Polyjuice special-handling
-    if pd["kind"] == "potion_polyjuice":
-        # 🪄 FIX 2: Calculate the 24-hour expiration time using dt.datetime and timedelta
-        duration = timedelta(hours=24)
-        expiration_time = (dt.datetime.utcnow() + duration).isoformat()
-        
-        remove_galleons_local(caster.id, cost)
-        houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
-        chosen = random.choice(houses)
-        user_house = get_user_house(member)
-        
-        if user_house == chosen:
-            # Misfire case
-            await apply_effect_to_member(member, "polyfail_cat", source="potion", expires_at=expiration_time)
-            await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name}... it misfired! You get whiskers 🐱 for 24 hours.")
-        else:
-            meta = {"polyhouse": chosen}
-            # Success case
-            await apply_effect_to_member(member, "polyjuice", source="potion", meta=meta, expires_at=expiration_time)
-            display_house = chosen.capitalize()
-            await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
-        return
-
-    # Bezoar (cleanse potions only)
+    # --- 2. Bezoar Execution (Cleansing Potion - Returns immediately) ---
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
+            # We explicitly exclude polyjuice/polyfail_cat effects from Bezoar cleanse here
             to_remove = [e["uid"] for e in active_effects[member.id]["effects"]
                          if (e.get("kind") or "").startswith("potion_") and e.get("effect") not in ("polyjuice", "polyfail_cat")]
             if len(to_remove) > 0:
@@ -1402,31 +1383,30 @@ async def drink(ctx, potion: str, member: discord.Member = None):
             return await ctx.send("❌ You can't use a Bezoar for that potion! No galleons have been taken.")
         return
 
-    # Polyjuice special-handling
+    # --- 3. Polyjuice Execution (This is the only Polyjuice execution block) ---
     if pd["kind"] == "potion_polyjuice":
-        # Calculate the 24-hour expiration time for the new effect (THIS IS THE FIX)
+        # Calculate the 24-hour expiration time using dt.datetime and timedelta
         duration = timedelta(hours=24)
-        expiration_time = (datetime.utcnow() + duration).isoformat()
+        expiration_time = (dt.datetime.utcnow() + duration).isoformat()
         
-        remove_galleons_local(caster.id, cost) # Remove galleons for a successful polyjuice
+        remove_galleons_local(caster.id, cost)
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
         user_house = get_user_house(member)
         
         if user_house == chosen:
-            # Potion backfired since user already has the house role
-            # FIX: Passed the expiration_time
+            # Misfire case (FIX: expires_at added)
             await apply_effect_to_member(member, "polyfail_cat", source="potion", expires_at=expiration_time)
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name}... it misfired! You get whiskers 🐱 for 24 hours.")
         else:
             meta = {"polyhouse": chosen}
-            # FIX: Passed the expiration_time
+            # Success case (FIX: expires_at added)
             await apply_effect_to_member(member, "polyjuice", source="potion", meta=meta, expires_at=expiration_time)
             display_house = chosen.capitalize()
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
         return
 
-    # All other potions: permanent until finite/cleareffects
+    # --- 4. All other potions (The catch-all - Only runs if not Polyjuice or Bezoar) ---
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, potion, source="potion", meta={"permanent": True})
     await ctx.send(f"🧪 {caster.display_name} gave **{potion.capitalize()}** to {member.display_name}!")
