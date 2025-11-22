@@ -1316,9 +1316,9 @@ async def cast(ctx, spell: str, member: discord.Member):
 # -------------------------
 # COMMAND: DRINK (potions)
 # -------------------------
-
 @bot.command()
 async def drink(ctx, potion: str, member: discord.Member = None):
+    # Initial checks
     if ctx.channel.id not in [OWLRY_CHANNEL_ID, DUELING_CLUB_ID]:
         return await ctx.send("❌ This command can only be used in the Dueling Club.")
 
@@ -1326,13 +1326,14 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     member = member or ctx.author
     caster = ctx.author
 
-    # 🛑 INSERT SERVER OWNER CHECK HERE 🛑
+    # Server Owner Check
     if member.id == member.guild.owner_id:
         await ctx.send(
             f"🦉 SQUAWK! I tried, but **{member.mention}** is protected by an **Unbreakable Vow**! My magic is canceled."
         )
         return
 
+    # Potion existence and cost checks
     if potion not in POTION_LIBRARY:
         return await ctx.send("❌ That potion doesn’t exist. Check the shop with `!shoppotions`.")
 
@@ -1341,9 +1342,8 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     if get_balance(caster.id) < cost:
         return await ctx.send("💸 You don’t have enough galleons to buy that potion!")
 
-    # --- 1. Polyjuice Cooldown Check (Must run for all Polyjuice attempts) ---
+    # --- 1. Polyjuice Cooldown Check ---
     if pd.get("kind") == "potion_polyjuice":
-        # Check for BOTH success ("polyjuice") and misfire ("polyfail_cat") effects
         polyjuice_effect = next((e for e in active_effects.get(member.id, {}).get("effects", [])
                                      if e.get("effect") in ("polyjuice", "polyfail_cat")), None)
         
@@ -1352,21 +1352,18 @@ async def drink(ctx, potion: str, member: discord.Member = None):
                 # Use dt.datetime for robust parsing
                 expires_at = dt.datetime.fromisoformat(polyjuice_effect["expires_at"])
                 
-                # Check if the effect has expired.
                 if dt.datetime.utcnow() < expires_at:
                     remaining_time = expires_at - dt.datetime.utcnow()
                     hours, remainder = divmod(remaining_time.seconds, 3600)
                     minutes, seconds = divmod(remainder, 60)
                     return await ctx.send(f"You try to imbibe another Polyjuice, but can't get it down. 🤢 You must wait {hours} hours, {minutes} minutes, and {seconds} seconds before you can drink it again.")
             except KeyError:
-                # If "expires_at" is missing (the old bug), this prevents a crash and informs the user.
                 return await ctx.send("🤢 You still feel a residual effect from a bugged Polyjuice. Please wait for the effect to be manually cleared or drink a Bezoar.")
             except Exception as e:
-                # Handle other parsing errors
                 print(f"Error parsing Polyjuice expiration time: {e}")
                 pass 
 
-    # --- 2. Bezoar Execution (Cleansing Potion - Returns immediately) ---
+    # --- 2. Bezoar Execution ---
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
             # We explicitly exclude polyjuice/polyfail_cat effects from Bezoar cleanse here
@@ -1383,7 +1380,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
             return await ctx.send("❌ You can't use a Bezoar for that potion! No galleons have been taken.")
         return
 
-    # --- 3. Polyjuice Execution (This is the only Polyjuice execution block) ---
+    # --- 3. Polyjuice Execution ---
     if pd["kind"] == "potion_polyjuice":
         # Calculate the 24-hour expiration time using dt.datetime and timedelta
         duration = timedelta(hours=24)
@@ -1406,7 +1403,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
         return
 
-    # --- 4. All other potions (The catch-all - Only runs if not Polyjuice or Bezoar) ---
+    # --- 4. All other potions (Generic Potion Execution) ---
     remove_galleons_local(caster.id, cost)
     await apply_effect_to_member(member, potion, source="potion", meta={"permanent": True})
     await ctx.send(f"🧪 {caster.display_name} gave **{potion.capitalize()}** to {member.display_name}!")
