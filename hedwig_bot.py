@@ -1339,16 +1339,16 @@ async def drink(ctx, potion: str, member: discord.Member = None):
 
 # Check for the 24-hour cooldown on Polyjuice
     if pd.get("kind") == "potion_polyjuice":
-        # 🪄 FIX 1: Check for BOTH success ("polyjuice") and misfire ("polyfail_cat") effects
+        # Check for BOTH success ("polyjuice") and misfire ("polyfail_cat") effects
         polyjuice_effect = next((e for e in active_effects.get(member.id, {}).get("effects", [])
                                      if e.get("effect") in ("polyjuice", "polyfail_cat")), None)
         
         if polyjuice_effect:
             try:
-                # 🪄 FIX 2: Ensure robust reading of the "expires_at" key (to handle old bugged effects)
+                # 🪄 FIX 1: Use dt.datetime for robust parsing
                 expires_at = dt.datetime.fromisoformat(polyjuice_effect["expires_at"])
                 
-                # Check if the effect has expired. If it hasn't, the user is still in the cooldown period.
+                # Check if the effect has expired.
                 if dt.datetime.utcnow() < expires_at:
                     remaining_time = expires_at - dt.datetime.utcnow()
                     hours, remainder = divmod(remaining_time.seconds, 3600)
@@ -1360,32 +1360,32 @@ async def drink(ctx, potion: str, member: discord.Member = None):
             except Exception as e:
                 # Handle other parsing errors
                 print(f"Error parsing Polyjuice expiration time: {e}")
-                pass # Continue to the next check/step if parsing fails (shouldn't happen with the fix below)
+                pass 
 
 
     # Polyjuice special-handling
     if pd["kind"] == "potion_polyjuice":
-        # 🪄 FIX 3: Calculate the 24-hour expiration time for the new effect
+        # 🪄 FIX 2: Calculate the 24-hour expiration time using dt.datetime and timedelta
         duration = timedelta(hours=24)
         expiration_time = (dt.datetime.utcnow() + duration).isoformat()
         
-        remove_galleons_local(caster.id, cost) # Remove galleons for a successful polyjuice
+        remove_galleons_local(caster.id, cost)
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
         user_house = get_user_house(member)
         
         if user_house == chosen:
-            # Potion backfired since user already has the house role
-            # FIX: Passed the expiration_time
+            # Misfire case
             await apply_effect_to_member(member, "polyfail_cat", source="potion", expires_at=expiration_time)
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name}... it misfired! You get whiskers 🐱 for 24 hours.")
         else:
             meta = {"polyhouse": chosen}
-            # FIX: Passed the expiration_time
+            # Success case
             await apply_effect_to_member(member, "polyjuice", source="potion", meta=meta, expires_at=expiration_time)
             display_house = chosen.capitalize()
             await ctx.send(f"🧪 {caster.display_name} gave Polyjuice to {member.display_name} — you can access the **{display_house}** common room for 24 hours!")
         return
+
     # Bezoar (cleanse potions only)
     if pd["kind"] == "potion_bezoar":
         if member.id in active_effects:
