@@ -447,7 +447,6 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
     if user_id in reminder_tasks and reminder_tasks[user_id].done():
         reminder_tasks.pop(user_id, None)
 
-
 # -------------------------
 # LIBRARIES
 # -------------------------
@@ -511,14 +510,15 @@ EFFECT_LIBRARY = {
 	    "duration": 86400,
         "description": "Gives the Lumos role and a star prefix to the nickname."
     },
-    # --- CONSOLIDATED POLYJUICE EFFECTS (Successful and Misfire) ---
-    "polyjuice": {
+    # Polyjuice Success Effect
+    "polyjuice": { 
         "emoji": "<:polyjuice:1413679815520944158>",
         "cost": 0,
         "kind": "potion_polyjuice", 
         "duration": 86400,
         "description": "Successful Polyjuice: Grants temporary house role access."
     },
+    # Polyjuice Misfire Effect (now properly inside the dictionary)
     "polyfail_cat": {
         "emoji": "🐱",
         "cost": 0,
@@ -529,12 +529,11 @@ EFFECT_LIBRARY = {
         "duration": 86400,
         "description": "Polyjuice misfire! Get whiskers for 24 hours.",
     },
-    # --- END ---
     "finite": {
         "cost": 10, "kind": "finite", "duration": 0,
         "description": "Finite: removes the most recent spell/potion from a user when cast."
-    },
-} # <--- IMPORTANT: Note the absence of a comma on the last entry ("finite")
+    } # <<< The dictionary must close here with no comma.
+} 
 
 POTION_LIBRARY = {
     "felixfelicis": {
@@ -561,7 +560,7 @@ POTION_LIBRARY = {
         "emoji": "<:bezoar:1415594792217350255>",
         "cost": 30, "kind": "potion_bezoar",
         "description": "Bezoar: removes active potion effects from the target instantly."
-    },
+    } # <<< The dictionary must close here with no comma.
 }
 
 # -------------------------
