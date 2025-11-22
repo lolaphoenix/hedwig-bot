@@ -453,117 +453,121 @@ async def schedule_reminder(user_id: int, remind_at: datetime, recurring=False):
 # -------------------------
 
 EFFECT_LIBRARY = {
-    "aguamenti": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:aguamenti:1415595031644999742>", "prefix_unicode": "🌊",
-        "suffix": "<:aguamenti:1415595031644999742>", "suffix_unicode": "🌊",
-        "description": "Surrounds the target's nickname with water."
-    },
-    "confundo": {
-        "cost": 25, "kind": "nickname",
-        "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ",
-        "suffix": "", "suffix_unicode": "❓",
-        "description": "Prefixes CONFUNDED to the target's nickname."
-    },
-    "diffindo": {
-        "cost": 30, "kind": "truncate",
-        "length": 5,
-        "description": "Removes the last 5 characters of the target's nickname."
-    },
-    "ebublio": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:ebublio:1415595038397693982>", "prefix_unicode": "🫧",
-        "suffix": "<:ebublio:1415595038397693982>", "suffix_unicode": "🫧",
-        "description": "Surrounds the target's nickname with bubbles."
-    },
-    "herbifors": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:herbifors:1415595039882481674>", "prefix_unicode": "🌸",
-        "suffix": "<:herbifors:1415595039882481674>", "suffix_unicode": "🌸",
-        "description": "Gives the target a floral nickname."
-    },
-    "serpensortia": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:serpensortia:1415595048124289075>", "prefix_unicode": "🐍",
-        "suffix": "<:serpensortia:1415595048124289075>", "suffix_unicode": "🐍",
-        "description": "Surrounds the target's nickname with snake emojis."
-    },
-    "tarantallegra": {
-        "cost": 20, "kind": "nickname",
-        "prefix": "<:tarantallegra:1415595049411936296>", "prefix_unicode": "💃",
-        "suffix": "<:tarantallegra:1415595049411936296>", "suffix_unicode": "💃",
-        "description": "Adds dancing emojis around the target's nickname."
-    },
-    "incendio": {
-        "cost": 25, "kind": "nickname",
-        "prefix": "<:incendio:1415595041191235718>", "prefix_unicode": "🔥",
-        "suffix": "<:incendio:1415595041191235718>", "suffix_unicode": "🔥",
-        "description": "Adds flames to the target's nickname."
-    },
-    "alohomora": {
-        "cost": 50, "kind": "role_alohomora",
-        "description": "Grants access to the Room of Requirement and starts the potion game."
-    },
-    "lumos": {
-        "cost": 15, "kind": "role_lumos",
-        "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
-        "suffix_unicode": "⭐",
+    "aguamenti": {
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:aguamenti:1415595031644999742>", "prefix_unicode": "🌊",
+        "suffix": "<:aguamenti:1415595031644999742>", "suffix_unicode": "🌊",
+        "description": "Surrounds the target's nickname with water."
+    },
+    "confundo": {
+        "cost": 25, "kind": "nickname",
+        "prefix": "<:confundo:1415595034769625199>", "prefix_unicode": "❓CONFUNDED - ",
+        "suffix": "", "suffix_unicode": "❓",
+        "description": "Prefixes CONFUNDED to the target's nickname."
+    },
+    "diffindo": {
+        "cost": 30, "kind": "truncate",
+        "length": 5,
+        "description": "Removes the last 5 characters of the target's nickname."
+    },
+    "ebublio": {
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:ebublio:1415595038397693982>", "prefix_unicode": "🫧",
+        "suffix": "<:ebublio:1415595038397693982>", "suffix_unicode": "🫧",
+        "description": "Surrounds the target's nickname with bubbles."
+    },
+    "herbifors": {
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:herbifors:1415595039882481674>", "prefix_unicode": "🌸",
+        "suffix": "<:herbifors:1415595039882481674>", "suffix_unicode": "🌸",
+        "description": "Gives the target a floral nickname."
+    },
+    "serpensortia": {
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:serpensortia:1415595048124289075>", "prefix_unicode": "🐍",
+        "suffix": "<:serpensortia:1415595048124289075>", "suffix_unicode": "🐍",
+        "description": "Surrounds the target's nickname with snake emojis."
+    },
+    "tarantallegra": {
+        "cost": 20, "kind": "nickname",
+        "prefix": "<:tarantallegra:1415595049411936296>", "prefix_unicode": "💃",
+        "suffix": "<:tarantallegra:1415595049411936296>", "suffix_unicode": "💃",
+        "description": "Adds dancing emojis around the target's nickname."
+    },
+    "incendio": {
+        "cost": 25, "kind": "nickname",
+        "prefix": "<:incendio:1415595041191235718>", "prefix_unicode": "🔥",
+        "suffix": "<:incendio:1415595041191235718>", "suffix_unicode": "🔥",
+        "description": "Adds flames to the target's nickname."
+    },
+    "alohomora": {
+        "cost": 50, "kind": "role_alohomora",
+        "description": "Grants access to the Room of Requirement and starts the potion game."
+    },
+    "lumos": {
+        "cost": 15, "kind": "role_lumos",
+        "prefix": "<:lumos:1415595044357931100>", "prefix_unicode": "⭐",
+        "suffix_unicode": "⭐",
 	"duration": 86400,
-        "description": "Gives the Lumos role and a star prefix to the nickname."
-    },
-    "finite": {
-        "cost": 10, "kind": "finite", "duration": 0,
-        "description": "Finite: removes the most recent spell/potion from a user when cast."
-    },
-}
+        "description": "Gives the Lumos role and a star prefix to the nickname."
+    },
+    "finite": {
+        "cost": 10, "kind": "finite", "duration": 0,
+        "description": "Finite: removes the most recent spell/potion from a user when cast."
+    },
+} # <--- Note: EFFECT_LIBRARY ends here.
 
+POTION_LIBRARY = {
+    "felixfelicis": {
+        "emoji": "<:felixfelicis:1413679761036673186>",
+        "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis:1414255673973280908>", "prefix_unicode": "🍀",
+        "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname."
+    },
+    "draughtlivingdeath": {
+        "emoji": "<:draughtoflivingdeath:1413679622041894985>", 
+        "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath:1414255673973280910>", "prefix_unicode": "💀",
+        "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname."
+    },
+    "amortentia": {
+        "emoji": "<:amortentia:1413679525178380369>",
+        "cost": 70, "kind": "potion_amortentia", "prefix": "<:amortentia:1414255673973280909>", "prefix_unicode": "💖", "role_id": ROLE_IDS["amortentia"],
+        "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname."
+    },
+    "polyjuice": {
+        "emoji": "<:polyjuice:1413679815520944158>",
+        "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
+        "description": "Polyjuice Potion: randomly grants access to a house common-room role for 24 hours (or backfires)."
+    },
+    "bezoar": {
+        "emoji": "<:bezoar:1415594792217350255>",
+        "cost": 30, "kind": "potion_bezoar",
+        "description": "Bezoar: removes active potion effects from the target instantly."
+    },
+} # <--- Note: POTION_LIBRARY ends here.
+
+
+# --- FIX: These must be added to EFFECT_LIBRARY *after* both main libraries are defined. ---
+
+# 1. Add the successful Polyjuice effect
 EFFECT_LIBRARY["polyjuice"] = {
     "emoji": "<:polyjuice:1413679815520944158>",
     "cost": 0,
-    "kind": "potion_polyjuice", # Must match the kind in POTION_LIBRARY
+    "kind": "potion_polyjuice", 
     "duration": 86400,
     "description": "Successful Polyjuice: Grants temporary house role access."
 }
 
-POTION_LIBRARY = {
-    "felixfelicis": {
-        "emoji": "<:felixfelicis:1413679761036673186>",
-        "cost": 60, "kind": "potion_luck_good", "prefix": "<:felixfelicis:1414255673973280908>", "prefix_unicode": "🍀",
-        "description": "Felix Felicis: improves odds of winning the Alohomora potion game and adds 🍀 to the nickname."
-    },
-    "draughtlivingdeath": {
-        "emoji": "<:draughtoflivingdeath:1413679622041894985>", 
-        "cost": 50, "kind": "potion_luck_bad", "prefix": "<:draughtlivingdeath:1414255673973280910>", "prefix_unicode": "💀",
-        "description": "Draught of the Living Death: decreases odds of winning Alohomora and adds 💀 to the nickname."
-    },
-    "amortentia": {
-        "emoji": "<:amortentia:1413679525178380369>",
-        "cost": 70, "kind": "potion_amortentia", "prefix": "<:amortentia:1414255673973280909>", "prefix_unicode": "💖", "role_id": ROLE_IDS["amortentia"],
-        "description": "Amortentia: grants the Amortentia role (color) and adds 💖 to nickname."
-    },
-    "polyjuice": {
-        "emoji": "<:polyjuice:1413679815520944158>",
-        "cost": 80, "kind": "potion_polyjuice", "duration": 86400,
-        "description": "Polyjuice Potion: randomly grants access to a house common-room role for 24 hours (or backfires)."
-    },
-    "bezoar": {
-        "emoji": "<:bezoar:1415594792217350255>",
-        "cost": 30, "kind": "potion_bezoar",
-        "description": "Bezoar: removes active potion effects from the target instantly."
-    },
-}
-
+# 2. Add the polyfail_cat effect (This one was in your original code)
 EFFECT_LIBRARY["polyfail_cat"] = {
-    "emoji": "🐱",
-    "cost": 0,
-    "kind": "nickname",
-    "prefix": "🐱",
-    "prefix_unicode": "🐱",
-    "suffix": "",
-    "duration": 86400,
-    "description": "Polyjuice misfire! Get whiskers for 24 hours.",
+    "emoji": "🐱",
+    "cost": 0,
+    "kind": "nickname",
+    "prefix": "🐱",
+    "prefix_unicode": "🐱",
+    "suffix": "",
+    "duration": 86400,
+    "description": "Polyjuice misfire! Get whiskers for 24 hours.",
 }
-
 # -------------------------
 # APPLY / REMOVE EFFECTS
 # -------------------------
