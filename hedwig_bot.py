@@ -511,11 +511,20 @@ EFFECT_LIBRARY = {
 	"duration": 86400,
         "description": "Gives the Lumos role and a star prefix to the nickname."
     },
+    # FIX: Polyjuice effect definition added here to prevent runtime crash.
+    "polyjuice": { 
+        "emoji": "<:polyjuice:1413679815520944158>",
+        "cost": 0,
+        "kind": "potion_polyjuice", 
+        "duration": 86400,
+        "description": "Successful Polyjuice: Grants temporary house role access."
+    },
+    # The 'finite' entry must follow a comma after the previous entry.
     "finite": {
         "cost": 10, "kind": "finite", "duration": 0,
         "description": "Finite: removes the most recent spell/potion from a user when cast."
     },
-} # <--- Note: EFFECT_LIBRARY ends here.
+} 
 
 POTION_LIBRARY = {
     "felixfelicis": {
@@ -543,21 +552,8 @@ POTION_LIBRARY = {
         "cost": 30, "kind": "potion_bezoar",
         "description": "Bezoar: removes active potion effects from the target instantly."
     },
-} # <--- Note: POTION_LIBRARY ends here.
-
-
-# --- FIX: These must be added to EFFECT_LIBRARY *after* both main libraries are defined. ---
-
-# 1. Add the successful Polyjuice effect
-EFFECT_LIBRARY["polyjuice"] = {
-    "emoji": "<:polyjuice:1413679815520944158>",
-    "cost": 0,
-    "kind": "potion_polyjuice", 
-    "duration": 86400,
-    "description": "Successful Polyjuice: Grants temporary house role access."
 }
 
-# 2. Add the polyfail_cat effect (This one was in your original code)
 EFFECT_LIBRARY["polyfail_cat"] = {
     "emoji": "🐱",
     "cost": 0,
@@ -568,6 +564,7 @@ EFFECT_LIBRARY["polyfail_cat"] = {
     "duration": 86400,
     "description": "Polyjuice misfire! Get whiskers for 24 hours.",
 }
+
 # -------------------------
 # APPLY / REMOVE EFFECTS
 # -------------------------
