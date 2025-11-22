@@ -517,6 +517,14 @@ EFFECT_LIBRARY = {
     },
 }
 
+EFFECT_LIBRARY["polyjuice"] = {
+    "emoji": "<:polyjuice:1413679815520944158>",
+    "cost": 0,
+    "kind": "potion_polyjuice", # Must match the kind in POTION_LIBRARY
+    "duration": 86400,
+    "description": "Successful Polyjuice: Grants temporary house role access."
+}
+
 POTION_LIBRARY = {
     "felixfelicis": {
         "emoji": "<:felixfelicis:1413679761036673186>",
