@@ -16,7 +16,6 @@ from datetime import datetime, timedelta
 # CONFIG / SETUP
 # -------------------------
 load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -1403,7 +1402,7 @@ async def drink(ctx, potion: str, member: discord.Member = None):
     if pd["kind"] == "potion_polyjuice":
         remove_galleons_local(caster.id, cost)
 
-        expiration_time = (dt.datetime.utcnow() + timedelta(hours=24)).isoformat()
+        expiration_time = dt.datetime.utcnow() + timedelta(hours=24)
 
         houses = ["gryffindor", "slytherin", "ravenclaw", "hufflepuff"]
         chosen = random.choice(houses)
