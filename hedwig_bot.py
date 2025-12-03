@@ -1651,9 +1651,6 @@ async def clear_channel(ctx, limit: int = 100):
 # -------------------------
 @bot.event
 async def on_ready():
-    # -------------------------------------------------
-    # START: Initial Setup
-    # -------------------------------------------------
     if not cleanup_effects.is_running():
         cleanup_effects.start()
     
@@ -1663,7 +1660,7 @@ async def on_ready():
     load_effects()
     load_reminders()
     load_last_daily()
-    load_duel_cooldowns() # Moved this up for organization
+    load_duel_cooldowns()
 
     # Clean up duplicate reminder keys (string vs int)
     unique = {}
@@ -1682,52 +1679,57 @@ async def on_ready():
             task = asyncio.create_task(schedule_reminder(int(uid), remind_time, recurring=True))
             reminder_tasks[int(uid)] = task
 
-    # -------------------------------------------------
-    # STEP 1: Rehydrate Saved Effects (Uses the guild)
-    # -------------------------------------------------
     guild = bot.get_guild(1398801863549259796)
+    
+    # Safety: wait a moment if guild isn't cached yet
+    if not guild:
+        await asyncio.sleep(2)
+        guild = bot.get_guild(1398801863549259796)
+
     new_effects = {}
 
-    # Rehydrate saved effects
-    for uid, data in list(effects.items()):
-        member = guild.get_member(int(uid)) if guild else None 
-        if not member:
-            continue
-        
-        # --- The rest of the rehydration logic (Indented) ---
-        new_effects[int(uid)] = data
-        for e in data["effects"]:
-            expires_at_str = e.get("expires_at")
-            if expires_at_str:
-                try:
-                    expires_at = datetime.fromisoformat(expires_at_str)
-                    # schedule expiry for any still-active effects
-                    if now_utc() < expires_at:
-                        asyncio.create_task(schedule_expiry(int(uid), e["uid"], expires_at))
-                except Exception as e:
-                    print(f"[Hedwig] Failed to schedule expiry for user {uid}: {e}")
-                    
-        await update_member_display(member) # Important step to re-apply nickname/roles
+    if guild:
+        # Rehydrate saved effects
+        for uid, data in list(effects.items()):
+            try:
+                member = guild.get_member(int(uid))
+            except (ValueError, TypeError):
+                continue
 
-    # -------------------------------------------------
-    # STEP 2: Final Cleanup and Announcements
-    # -------------------------------------------------
-    # Update active_effects globally
-    active_effects.update(new_effects)
+            if not member:
+                continue
+            
+            # Keep valid effect data
+            new_effects[int(uid)] = data
+            for e in data.get("effects", []):
+                expires_at_str = e.get("expires_at")
+                if expires_at_str:
+                    try:
+                        expires_at = datetime.fromisoformat(expires_at_str)
+                        # schedule expiry for any still-active effects
+                        if now_utc() < expires_at:
+                            asyncio.create_task(schedule_expiry(int(uid), e["uid"], expires_at))
+                    except Exception as e:
+                        print(f"[Hedwig] Failed to schedule expiry for user {uid}: {e}")
+                        
+            await update_member_display(member)
 
-    # --- Alohomora Safety Cleanup ---
-    role = discord.utils.get(guild.roles, name=ALOHOMORA_ROLE_NAME)
-    if role:
-        for m in role.members:
-            await safe_remove_role(m, role)
+        # Update active_effects globally
+        active_effects.update(new_effects)
+
+        # --- Alohomora Safety Cleanup ---
+        role = discord.utils.get(guild.roles, name=ALOHOMORA_ROLE_NAME)
+        if role:
+            for m in role.members:
+                await safe_remove_role(m, role)
+
     
     global current_room_user
     current_room_user = None
     alohomora_cooldowns.pop("global_last_cast", None)
 
-
     effects.clear()
-    effects.update({str(k):v for k,v in new_effects.items()}) # Fix: Ensure keys are strings for persistence
+    effects.update({str(k):v for k,v in new_effects.items()})
     save_effects()
 
     owlry_channel = bot.get_channel(OWLRY_CHANNEL_ID)
