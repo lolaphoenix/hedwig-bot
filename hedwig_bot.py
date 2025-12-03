@@ -72,7 +72,6 @@ effect_emojis = {
     "confundo": "<:confundo:1415595034769625199>",
     "alohomora": "<:alohomora:1415595033410666629>",
     "aguamenti": "<:aguamenti:1415595031644999742>",
-    "amortentia": "<:amortentia:1414255673973280909>",
     "bezoar": "<:bezoar:1415594792217350255>",
     "felixfelicis": "<:felixfelicis:1413679761036673186>",
     "draughtlivingdeath": "<:draughtoflivingdeath:1413679622041894985>",
@@ -234,24 +233,6 @@ def save_house_points():
         os.replace(tmp, POINTS_FILE)
     except Exception as e:
         print("[Hedwig] Failed to save house points:", e)
-
-# --- duel persistence ---
-
-def load_duel_cooldowns():
-    global duel_cooldowns
-    try:
-        if os.path.exists(DUEL_COOLDOWNS_FILE):
-            with open(DUEL_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            duel_cooldowns = {int(k): datetime.fromisoformat(v) for k, v in raw.items()}
-            print(f"[Hedwig] loaded {len(duel_cooldowns)} duel cooldowns from {DUEL_COOLDOWNS_FILE}")
-        else:
-            duel_cooldowns = {}
-            save_duel_cooldowns()
-            print(f"[Hedwig] created new duel cooldowns file at {DUEL_COOLDOWNS_FILE}")
-    except Exception as e:
-        print("[Hedwig] Failed to load duel cooldowns:", e)
-        duel_cooldowns = {}
 
 # -------------------------
 # Persistence Functions
@@ -567,35 +548,48 @@ POTION_LIBRARY = {
 # APPLY / REMOVE EFFECTS
 # -------------------------
 
-async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None):
+async def apply_effect_to_member(member: discord.Member, effect_name: str, source: str = "spell", meta: dict = None, expires_at: datetime = None):
+    """
+    Applies an effect to a member, updating roles, nickname, and persistence.
+    If 'expires_at' is provided, it takes precedence over calculated duration.
+    """
     # safety: ensure the effect exists in either library
     effect_def = EFFECT_LIBRARY.get(effect_name) or POTION_LIBRARY.get(effect_name)
     if not effect_def:
         print(f"[Hedwig] Tried to apply unknown effect: {effect_name}")
         return
 
-    # Only certain effects expire (Polyjuice, Alohomora, and Lumos)
-    duration = 0
-    if effect_name in ("polyjuice", "alohomora", "lumos"):
-        duration = effect_def.get("duration", 86400)  # default 24 hours
-    expires_at = datetime.utcnow() + timedelta(seconds=duration) if duration else None
+    # --- Determine Expiration Time (FIXED LOGIC) ---
+    final_expires_at = None
+    
+    if expires_at:
+        # Case 1: A specific datetime was passed (e.g., from !drink/Polyjuice). USE IT.
+        final_expires_at = expires_at
+    elif effect_name in ("polyjuice", "alohomora", "lumos"):
+        # Case 2: No time was passed, but the effect has a standard duration. CALCULATE IT.
+        duration = effect_def.get("duration", 86400) # default 24 hours
+        final_expires_at = datetime.utcnow() + timedelta(seconds=duration)
+    # Case 3: final_expires_at remains None for permanent effects (or those not listed above)
 
     uid = f"{effect_name}_{int(time.time())}"
 
+    # Use effect_def properties (minor simplification)
     emoji_custom = effect_def.get("emoji", "")
     prefix_unicode = effect_def.get("prefix_unicode", "")
     suffix_unicode = effect_def.get("suffix_unicode", "")
 
-    # Store clean nickname base once
+    # --- Effect Persistence and Initialization ---
     if member.id not in active_effects:
-        # Load persistent data if it exists. Note: 'effects' uses string keys.
-        # This copies the state from file persistence (effects) to working memory (active_effects).
-        
+        # Load persistent data or initialize new entry
         if str(member.id) in effects:
             # Load existing state from file persistence
             active_effects[member.id] = effects[str(member.id)]
         else:
             # Initialize a new entry if no effects are found anywhere
+            # CRITICAL: We use member.display_name here. If the user already has an
+            # effect, their display_name is wrong. This is standard behavior for bots
+            # that don't track original name upon joining. We rely on the stored 'effects'
+            # data for "original_nick" to be right if they've had an effect before.
             active_effects[member.id] = {"original_nick": member.display_name, "effects": []}
 
     # --- Special handling for Diffindo (truncate nickname) ---
@@ -603,17 +597,20 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         length = effect_def.get("length", 0)
         base = active_effects[member.id]["original_nick"]
         if length and len(base) > length:
+            # Note: This meta is stored inside the effect entry for restore later
             removed_part = base[-length:]
             if meta is None:
                 meta = {}
             meta["removed_part"] = removed_part
 
+    # --- Create Effect Entry ---
     entry = {
         "uid": uid,
         "effect": effect_name,
         "name": effect_name,
         "source": source,
-        "expires_at": expires_at.isoformat() if expires_at else None,
+        # Use final_expires_at here:
+        "expires_at": final_expires_at.isoformat() if final_expires_at else None,
         **effect_def,
         "prefix_custom": emoji_custom,
         "prefix_unicode": prefix_unicode,
@@ -621,7 +618,7 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
         "meta": meta or {}
     }
 
-    # Add role immediately if relevant
+    # Add role immediately if relevant (This is duplicated logic, but left for compatibility)
     role_id = entry.get("role_id")
     if role_id:
         role = member.guild.get_role(role_id)
@@ -635,13 +632,12 @@ async def apply_effect_to_member(member: discord.Member, effect_name: str, sourc
     effects[str(member.id)] = active_effects[member.id]
     save_effects()
 
-    # schedule expiry for any temporary effect (expires_at set when effect_def defines duration)
-    if expires_at:
-        asyncio.create_task(schedule_expiry(member.id, uid, expires_at))
+    # schedule expiry for any temporary effect
+    if final_expires_at:
+        asyncio.create_task(schedule_expiry(member.id, uid, final_expires_at))
 
     # Update nickname/roles
     await update_member_display(member)
-
 
 async def schedule_expiry(user_id: int, uid: str, expires_at: datetime):
     delta = (expires_at - now_utc()).total_seconds()
@@ -1655,13 +1651,19 @@ async def clear_channel(ctx, limit: int = 100):
 # -------------------------
 @bot.event
 async def on_ready():
+    # -------------------------------------------------
+    # START: Initial Setup
+    # -------------------------------------------------
     if not cleanup_effects.is_running():
         cleanup_effects.start()
+    
+    # Load persistence files
     load_galleons()
     load_house_points()
     load_effects()
     load_reminders()
     load_last_daily()
+    load_duel_cooldowns() # Moved this up for organization
 
     # Clean up duplicate reminder keys (string vs int)
     unique = {}
@@ -1680,46 +1682,52 @@ async def on_ready():
             task = asyncio.create_task(schedule_reminder(int(uid), remind_time, recurring=True))
             reminder_tasks[int(uid)] = task
 
-    load_duel_cooldowns()
-
+    # -------------------------------------------------
+    # STEP 1: Rehydrate Saved Effects (Uses the guild)
+    # -------------------------------------------------
     guild = bot.get_guild(1398801863549259796)
     new_effects = {}
 
     # Rehydrate saved effects
     for uid, data in list(effects.items()):
-        member = guild.get_member(int(uid)) if guild else None
+        member = guild.get_member(int(uid)) if guild else None 
         if not member:
             continue
-        original_nick = data.get("original_nick", member.display_name)
-        active_effects[member.id] = {"original_nick": original_nick, "effects": []}
-        for e in data.get("effects", []):
-            try:
-                if "expires_at" in e and e["expires_at"]:
-                    exp_time = datetime.fromisoformat(e["expires_at"])
-                    if exp_time > datetime.utcnow():
-                        active_effects[member.id]["effects"].append(e)
-                        if e.get("kind") in ("potion_polyjuice", "role_alohomora", "role_lumos"):
-                            asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
-                else:
-                    active_effects[member.id]["effects"].append(e)
-            except Exception as err:
-                print(f"[Hedwig] Error restoring effect for {member.display_name}: {err}")
+        
+        # --- The rest of the rehydration logic (Indented) ---
+        new_effects[int(uid)] = data
+        for e in data["effects"]:
+            expires_at_str = e.get("expires_at")
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                    # schedule expiry for any still-active effects
+                    if now_utc() < expires_at:
+                        asyncio.create_task(schedule_expiry(int(uid), e["uid"], expires_at))
+                except Exception as e:
+                    print(f"[Hedwig] Failed to schedule expiry for user {uid}: {e}")
+                    
+        await update_member_display(member) # Important step to re-apply nickname/roles
 
-        if active_effects[member.id]["effects"]:
-            new_effects[uid] = active_effects[member.id]
+    # -------------------------------------------------
+    # STEP 2: Final Cleanup and Announcements
+    # -------------------------------------------------
+    # Update active_effects globally
+    active_effects.update(new_effects)
 
     # --- Alohomora Safety Cleanup ---
     role = discord.utils.get(guild.roles, name=ALOHOMORA_ROLE_NAME)
     if role:
         for m in role.members:
             await safe_remove_role(m, role)
+    
     global current_room_user
     current_room_user = None
     alohomora_cooldowns.pop("global_last_cast", None)
 
 
     effects.clear()
-    effects.update(new_effects)
+    effects.update({str(k):v for k,v in new_effects.items()}) # Fix: Ensure keys are strings for persistence
     save_effects()
 
     owlry_channel = bot.get_channel(OWLRY_CHANNEL_ID)
@@ -1727,11 +1735,6 @@ async def on_ready():
         await owlry_channel.send("🦉 Hedwig is flying again!")
 
     print(f"[Hedwig] Logged in as {bot.user}")
-
-
-TOKEN = os.getenv("DISCORD_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ DISCORD_TOKEN is missing from your .env file!")
 
 # -------------------------
 # Background Tasks
@@ -1783,7 +1786,7 @@ async def cleanup_effects():
     # 3. Call the external cleanup function for expired items
     for member_uid_str, uid in to_expire:
         # We need to ensure we can get the member object
-        member = bot.get_guild(SERVER_ID).get_member(int(member_uid_str))
+        member = bot.get_guild(1398801863549259796).get_member(int(member_uid_str))
         if member:
             await expire_effect(member, uid)
         
