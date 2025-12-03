@@ -1651,10 +1651,13 @@ async def clear_channel(ctx, limit: int = 100):
 # -------------------------
 @bot.event
 async def on_ready():
+    # -------------------------------------------------
+    # START: Initial Setup (Synchronous Loads)
+    # -------------------------------------------------
     if not cleanup_effects.is_running():
         cleanup_effects.start()
     
-    # Load persistence files
+    # Synchronous functions must run safely
     load_galleons()
     load_house_points()
     load_effects()
@@ -1662,7 +1665,7 @@ async def on_ready():
     load_last_daily()
     load_duel_cooldowns()
 
-    # Clean up duplicate reminder keys (string vs int)
+    # Clean up duplicate reminder keys
     unique = {}
     for k, v in reminders.items():
         uid = int(k)
@@ -1679,57 +1682,74 @@ async def on_ready():
             task = asyncio.create_task(schedule_reminder(int(uid), remind_time, recurring=True))
             reminder_tasks[int(uid)] = task
 
-    guild = bot.get_guild(1398801863549259796)
+    # -------------------------------------------------
+    # STEP 1: Safely Acquire Guild Object
+    # -------------------------------------------------
+    SERVER_ID = 1398801863549259796
+    guild = bot.get_guild(SERVER_ID)
     
-    # Safety: wait a moment if guild isn't cached yet
+    # CRITICAL FIX: Wait for guild if not found immediately (Prevents Attribute Error)
     if not guild:
         await asyncio.sleep(2)
-        guild = bot.get_guild(1398801863549259796)
-
+        guild = bot.get_guild(SERVER_ID)
+    
     new_effects = {}
 
     if guild:
-        # Rehydrate saved effects
+        # -------------------------------------------------
+        # STEP 2: Rehydrate Saved Effects (Only runs if guild is available)
+        # -------------------------------------------------
         for uid, data in list(effects.items()):
             try:
+                # SAFE: guild is guaranteed to be non-None here
                 member = guild.get_member(int(uid))
             except (ValueError, TypeError):
                 continue
 
             if not member:
                 continue
+
+            original_nick = data.get("original_nick", member.display_name)
+            active_effects[member.id] = {"original_nick": original_nick, "effects": []}
             
-            # Keep valid effect data
-            new_effects[int(uid)] = data
             for e in data.get("effects", []):
-                expires_at_str = e.get("expires_at")
-                if expires_at_str:
-                    try:
-                        expires_at = datetime.fromisoformat(expires_at_str)
-                        # schedule expiry for any still-active effects
-                        if now_utc() < expires_at:
-                            asyncio.create_task(schedule_expiry(int(uid), e["uid"], expires_at))
-                    except Exception as e:
-                        print(f"[Hedwig] Failed to schedule expiry for user {uid}: {e}")
-                        
+                try:
+                    is_active = True
+                    if "expires_at" in e and e["expires_at"]:
+                        exp_time = datetime.fromisoformat(e["expires_at"])
+                        if exp_time <= datetime.utcnow():
+                            is_active = False
+                            
+                    if is_active:
+                        active_effects[member.id]["effects"].append(e)
+                        if e.get("kind") in ("potion_polyjuice", "role_alohomora", "role_lumos") and e.get("expires_at"):
+                            asyncio.create_task(schedule_expiry(member.id, e["uid"], exp_time))
+                            
+                except Exception as err:
+                    print(f"[Hedwig] Error restoring effect for {member.display_name}: {err}")
+
+            if active_effects[member.id]["effects"]:
+                new_effects[uid] = active_effects[member.id]
+            
             await update_member_display(member)
 
-        # Update active_effects globally
-        active_effects.update(new_effects)
-
-        # --- Alohomora Safety Cleanup ---
+        # --- Alohomora Safety Cleanup (Only runs if guild is available) ---
         role = discord.utils.get(guild.roles, name=ALOHOMORA_ROLE_NAME)
         if role:
             for m in role.members:
                 await safe_remove_role(m, role)
 
+    # -------------------------------------------------
+    # STEP 3: Final Cleanup and Announcements
+    # -------------------------------------------------
     
     global current_room_user
     current_room_user = None
     alohomora_cooldowns.pop("global_last_cast", None)
 
+    # Update persistent effects 
     effects.clear()
-    effects.update({str(k):v for k,v in new_effects.items()})
+    effects.update(new_effects)
     save_effects()
 
     owlry_channel = bot.get_channel(OWLRY_CHANNEL_ID)
