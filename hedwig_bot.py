@@ -818,6 +818,44 @@ async def update_member_display(member: discord.Member):
     # Now, recompute and set the nickname based on the roles that were added.
     await recompute_nickname(member)
 
+@bot.command(name="force_alohomora")
+async def force_alohomora(ctx, member: discord.Member):
+    """Staff only: Forcefully grants a user access to the Room of Requirement."""
+    if not is_staff_allowed(ctx.author):
+        return await ctx.send("🚫 You do not have the authority to cast this spell manually.")
+
+    global current_room_user
+
+    # 1. Clear the room if someone else is technically 'in' it
+    if current_room_user and current_room_user != member.id:
+        old_occupant = ctx.guild.get_member(current_room_user)
+        if old_occupant and old_occupant.id in active_effects:
+            # Find their alohomora UID to expire it properly
+            alo_effect = next((e for e in active_effects[old_occupant.id]["effects"] if e["effect"] == "alohomora"), None)
+            if alo_effect:
+                await expire_effect(old_occupant, alo_effect["uid"])
+        
+        await ctx.send(f"🧹 Clearing the previous occupant to make way for {member.display_name}...")
+
+    # 2. Reset any specific alohomora cooldown for the target
+    if member.id in alohomora_cooldowns:
+        del alohomora_cooldowns[member.id]
+
+    # 3. Manually set the state
+    current_room_user = member.id
+    
+    # 4. Apply the effect (this handles the 24hr timer and the role)
+    # We pass 'expires_at' to ensure it starts a fresh 24-hour clock
+    fresh_expiry = datetime.utcnow() + timedelta(hours=24)
+    await apply_effect_to_member(
+        member, 
+        "alohomora", 
+        source="staff_override", 
+        expires_at=fresh_expiry
+    )
+
+    await ctx.send(f"🪄 **Staff Override:** The Room of Requirement has recognized {member.mention}. The door is now open!")
+
 # -------------------------
 # DUEL SEQUENCE
 # -------------------------
