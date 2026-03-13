@@ -854,6 +854,10 @@ async def force_alohomora(ctx, member: discord.Member):
         expires_at=fresh_expiry
     )
 
+    # Start the potion game, same as !cast alohomora does
+    active_potions[member.id] = {"winning": pick_winning_potion(), "chosen": False, "started_by": ctx.author.id}
+    await announce_room_for(member)
+
     await ctx.send(f"🪄 **Staff Override:** The Room of Requirement has recognized {member.mention}. The door is now open!")
 
 # -------------------------
@@ -1700,9 +1704,6 @@ async def on_ready():
     # -------------------------------------------------
     # START: Initial Setup (Synchronous Loads)
     # -------------------------------------------------
-    if not cleanup_effects.is_running():
-        cleanup_effects.start()
-    
     # Synchronous functions must run safely
     load_galleons()
     load_house_points()
@@ -1801,6 +1802,10 @@ async def on_ready():
     owlry_channel = bot.get_channel(OWLRY_CHANNEL_ID)
     if owlry_channel:
         await owlry_channel.send("🦉 Hedwig is flying again!")
+
+    # Start background task only after all setup is complete
+    if not cleanup_effects.is_running():
+        cleanup_effects.start()
 
     print(f"[Hedwig] Logged in as {bot.user}")
 
